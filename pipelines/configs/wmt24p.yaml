@@ -1,0 +1,12 @@
+scenario: configs/mt/mt_multi_turn_please_translate_again.yaml
+tgt: de
+prompts_path: data/processed/wmt24p
+prompt_key: source
+extra_data_fields:
+  - source
+  - target
+  - lp
+  - domain
+  - document_id
+  - segment_id
+  - is_bad_source

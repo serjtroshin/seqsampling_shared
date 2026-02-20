@@ -1,0 +1,23 @@
+runtime: apptainer
+
+# Required for apptainer mode:
+image_sif: /ivi/ilps/personal/stroshi/vllm_sif/vllm-openai-0.11.1.sif
+cache_base: /tmp/stroshi_cache
+
+# Optional:
+host: 127.0.0.1
+port: 8000
+entrypoint: serve               # serve | api_server
+apptainer_bin: apptainer
+vllm_bin: vllm
+python_bin: python
+use_gpu: true
+cleanenv: true
+container_cache_root: /tmp/stroshi_cache/.cache
+
+# Appended after model_config.vllm_server_args
+extra_server_args:
+  - "--disable-uvicorn-access-log"
+
+# Optional static token (if needed)
+# hf_token: hf_xxx

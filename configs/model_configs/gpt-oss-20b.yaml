@@ -1,0 +1,22 @@
+model: openai/gpt-oss-20b
+vllm_runtime_config: experiments/mt/vllm_config/apptainer.yaml
+vllm_server_args:
+  - "--max-model-len"
+  - "32768"
+  - "--gpu-memory-utilization"
+  - "0.9"
+  - "--max-num-batched-tokens"
+  - "8192"
+  - "--max-num-seqs"
+  - "16"
+  - "--disable-uvicorn-access-log"
+  - "--generation-config"
+  - "vllm"
+  - "--no-enable-prefix-caching"
+scenario_override:
+  temperature: 0.6
+  top_k: 20
+  top_p: 0.95
+  max_tokens: 16384
+  vllm_extra_body:
+    include_reasoning: false

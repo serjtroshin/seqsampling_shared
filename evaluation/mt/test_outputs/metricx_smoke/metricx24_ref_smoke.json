@@ -1,0 +1,24 @@
+{
+  "file": "/home/stroshi/parallel_sequential/evaluation/mt/test_data/metricx_smoke_samples.jsonl",
+  "n": 2,
+  "average_score": 0.1770395189523697,
+  "scores": [
+    {
+      "prompt_id": "0",
+      "response_idx": 0,
+      "score": 0.1667177677154541
+    },
+    {
+      "prompt_id": "1",
+      "response_idx": 0,
+      "score": 0.18736127018928528
+    }
+  ],
+  "metric": "metricx24",
+  "model": "google/metricx-24-hybrid-large-v2p6",
+  "tokenizer": "google/mt5-xl",
+  "batch_size": 1,
+  "max_input_length": 1536,
+  "qe": false,
+  "direction": "lower_is_better"
+}

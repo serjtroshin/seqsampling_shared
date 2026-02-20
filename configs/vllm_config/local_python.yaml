@@ -1,0 +1,15 @@
+runtime: local_python
+
+# Optional:
+host: 127.0.0.1
+port: 8000
+entrypoint: api_server          # api_server | serve
+python_bin: .venv/bin/python
+vllm_bin: vllm
+
+# Optional env vars prefixed before command
+env: {}
+
+# Appended after model_config.vllm_server_args
+extra_server_args:
+  - "--disable-uvicorn-access-log"

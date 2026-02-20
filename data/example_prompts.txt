@@ -1,0 +1,2 @@
+Generate a city name.
+Generate a Slavic name.

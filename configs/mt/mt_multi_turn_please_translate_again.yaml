@@ -1,0 +1,36 @@
+name: mt_multi_turn_please_translate_again
+backend: vllm
+sampling_mode: multi_turn
+model: meta-llama/Llama-3.1-8B-Instruct
+tgt: de
+src: en
+tgt_lang_name: German
+src_lang_name: English
+prompts_path: ../../data/mt_from_en.txt
+output_dir: ../../outputs/mt/en-de/multi_turn_please_translate_again/
+output_filename: samples.jsonl
+prompt_template: "${src_lang_name}: {prompt}"
+system_prompt: You are a helpful assistant.
+prompt_field_name: output
+prompt_example_json: ""
+first_turn_instruction: "Translate the following text from ${src_lang_name} to ${tgt_lang_name}."
+reiteration_instruction: "Please again translate the following text from ${src_lang_name} to ${tgt_lang_name}."
+response_instruction: "Provide only one translation and do not output anything else after that."
+max_tokens: 500
+temperature: 0.9
+top_p: 0.95
+top_k: 5
+num_generations: 5
+n_parallel: 1
+history_k: 1
+vllm_base_url: http://localhost:8000/v1
+vllm_api_key: dummy-key
+request_timeout: 3600
+max_concurrent: 16
+vllm_host: 127.0.0.1
+vllm_port: 8000
+vllm_server_args:
+  - "--max-model-len"
+  - "65536"
+  - "--gpu-memory-utilization"
+  - "0.95"

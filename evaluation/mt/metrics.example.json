@@ -1,0 +1,27 @@
+{
+  "include_final_answers": true,
+  "generation_keys": ["generations", "solutions"],
+  "metrics": [
+    {
+      "type": "comet_ref",
+      "name": "xcomet_xxl",
+      "model": "Unbabel/XCOMET-XXL",
+      "batch_size": 2,
+      "use_gpu_if_available": true
+    },
+    {
+      "type": "comet_ref",
+      "name": "comet_qe",
+      "model": "Unbabel/wmt22-comet-da",
+      "batch_size": 8,
+      "use_gpu_if_available": true
+    },
+    {
+      "type": "comet_qe",
+      "name": "comet_kiwi_qe",
+      "model": "Unbabel/wmt23-cometkiwi-da-xl",
+      "batch_size": 8,
+      "use_gpu_if_available": true
+    }
+  ]
+}

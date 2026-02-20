@@ -1,0 +1,17 @@
+{
+  "include_final_answers": false,
+  "generation_keys": ["solutions"],
+  "metrics": [
+    {
+      "type": "metricx24",
+      "name": "metricx24_ref_smoke",
+      "model": "google/metricx-24-hybrid-large-v2p6",
+      "tokenizer": "google/mt5-xl",
+      "max_input_length": 1536,
+      "batch_size": 1,
+      "qe": false,
+      "metricx_python": "evaluation/mt/metricx/.venv/bin/python",
+      "metricx_repo_dir": "evaluation/mt/metricx"
+    }
+  ]
+}

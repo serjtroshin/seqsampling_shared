@@ -1,0 +1,25 @@
+name: example_iterative
+backend: vllm
+sampling_mode: iterative
+model: meta-llama/Llama-3.1-8B-Instruct
+prompts_path: ../data/example_prompts.txt
+output_dir: ../outputs
+output_filename: samples.jsonl
+prompt_template: "{prompt}"
+system_prompt: You are helpful and concise assistant.
+prompt_field_name: output
+prompt_example_json: ""
+previous_solutions_text: "Previously sampled outputs: {previous}"
+max_tokens: 128
+temperature: 0.9
+top_p: 0.95
+top_k: 5
+num_generations: 3
+n_parallel: 1
+history_k: 2
+vllm_base_url: http://localhost:8000/v1
+vllm_api_key: dummy-key
+request_timeout: 3600
+max_concurrent: 16
+vllm_host: 127.0.0.1
+vllm_port: 8000

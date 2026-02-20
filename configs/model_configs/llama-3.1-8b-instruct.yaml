@@ -1,0 +1,15 @@
+model: meta-llama/Llama-3.1-8B-Instruct
+vllm_runtime_config: experiments/mt/vllm_config/local_python.yaml
+vllm_server_args:
+  - "--max-model-len"
+  - "8192"
+  - "--gpu-memory-utilization"
+  - "0.95"
+  - "--max-num-batched-tokens"
+  - "65536"
+  - "--disable-uvicorn-access-log"
+scenario_override:
+  max_tokens: 4096
+  temperature: 0.6
+  top_p: 0.9
+  top_k: 20

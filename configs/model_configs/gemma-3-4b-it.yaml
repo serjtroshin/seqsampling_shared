@@ -1,0 +1,14 @@
+model: google/gemma-3-4b-it
+vllm_runtime_config: experiments/mt/vllm_config/local_python.yaml
+vllm_server_args:
+  - "--max-model-len"
+  - "8192"
+  - "--gpu-memory-utilization"
+  - "0.90"
+  - "--max-num-batched-tokens"
+  - "8192"
+  - "--disable-uvicorn-access-log"
+  - "--generation-config"
+  - "vllm"
+scenario_override:
+  max_tokens: 4096

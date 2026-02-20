@@ -1,0 +1,36 @@
+name: mt_parallel
+backend: vllm
+sampling_mode: parallel  # switch to parallel sampling
+model: meta-llama/Llama-3.1-8B-Instruct
+src: en
+src_lang_name: English
+tgt: de
+tgt_lang_name: German
+prompts_path: ../../data/mt_from_en.txt
+output_dir: ../../outputs/mt/en-ru/parallel/
+output_filename: samples.jsonl
+prompt_template: "${src_lang_name}: {prompt}"
+first_turn_instruction: "Translate the following text from ${src_lang_name} to ${tgt_lang_name}."
+system_prompt: You are a helpful assistant.
+prompt_field_name: output
+prompt_example_json: ""
+response_instruction: "Provide only one translation and do not output anything else after that."
+# No previous_solutions_text needed for parallel mode (no history)
+max_tokens: 500
+temperature: 0.9
+top_p: 0.95
+top_k: 5
+num_generations: 10      # controls n (fan-out) in parallel sampler
+n_parallel: 1             # kept for symmetry; not used by ParallelSampler
+history_k: 1              # unused in parallel mode
+vllm_base_url: http://localhost:8000/v1
+vllm_api_key: dummy-key
+request_timeout: 3600
+max_concurrent: 1
+vllm_host: 127.0.0.1
+vllm_port: 8000
+vllm_server_args:
+  - "--max-model-len"
+  - "65536"
+  - "--gpu-memory-utilization"
+  - "0.95"

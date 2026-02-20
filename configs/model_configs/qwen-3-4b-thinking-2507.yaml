@@ -1,0 +1,17 @@
+model: Qwen/Qwen3-4B-Thinking-2507
+vllm_runtime_config: experiments/mt/vllm_config/local_python.yaml
+vllm_server_args:
+  - "--max-model-len"
+  - "32768"
+  - "--gpu-memory-utilization"
+  - "0.95"
+  - "--max-num-batched-tokens"
+  - "65536"
+  - "--disable-uvicorn-access-log"
+  - "--generation-config"
+  - "vllm"
+scenario_override:
+  temperature: 0.6
+  top_k: 20
+  top_p: 0.95
+  max_tokens: 8196
