@@ -105,32 +105,6 @@ python pipelines/pipeline.py \
 
 `--tgt` uses `pipelines/langauges.py` (for example `ru`, `zh`, `de`). Source language is always English, and default `tgt` is `de`.
 
-# Running a pipeline with a scenario on a pre-allocated GPU node -- useful for debugging or if you have a running vLLM service
-
-Use this if you already have an interactive GPU allocation and want to run jobs directly on that node:
-
-```bash
-./scripts/install_envs.sh
-source .venv/bin/activate
-
-# 1) Start vLLM in terminal A
-VLLM_CMD=$(python configs/vllm_config/vllm_server_runner.py \
-  --model-config configs/model_configs/qwen-3-4b-instruct-2507.yaml \
-  --vllm-config configs/vllm_config/local_python.yaml)
-bash -lc "$VLLM_CMD"
-
-# 2) In terminal B: write pipeline scripts only
-python pipelines/pipeline.py \
-  --config pipelines/configs/wmt24p.yaml \
-  --model-config configs/model_configs/qwen-3-4b-instruct-2507.yaml \
-  run_name=please_translate_again_qwen4b \
-  submit_jobs=false
-
-# 3) Run scripts directly on the node (no sbatch)
-bash outputs/mt/pipeline_runs/please_translate_again_qwen4b/gen_job.sh
-bash outputs/mt/pipeline_runs/please_translate_again_qwen4b/eval_job.sh
-```
-
 ## Process real data folders and run pipeline
 
 ### Process the data:
@@ -153,6 +127,7 @@ Then run the pipeline on the processed JSONL files. For `wmt24p`, the default ta
 Submit pipeline for processed `wmt24p` data (sentence-level translation):
 
 ```bash
+source .venv/bin/activate
 # Uses default tgt=de from config and auto-resolves:
 # data/processed/wmt24p/en-de*.jsonl
 python pipelines/pipeline.py --config pipelines/configs/wmt24p.yaml
@@ -169,6 +144,7 @@ python pipelines/pipeline.py --config pipelines/configs/wmt24p.yaml --tgt ru
 
 Submit pipeline for processed `wmttest2024_plus_doc` data (document-level translation):
 ```bash
+source .venv/bin/activate
 python pipelines/pipeline.py --config pipelines/configs/wmt24p_doc.yaml
 ```
 
@@ -177,6 +153,7 @@ python pipelines/pipeline.py --config pipelines/configs/wmt24p_doc.yaml
 Choose scenario (`multi_turn` vs `mt_parallel`):
 
 ```bash
+source .venv/bin/activate
 # Multi-turn scenario (default in pipeline configs)
 python pipelines/pipeline.py --config pipelines/configs/wmt24p.yaml \
   scenario=configs/mt/mt_multi_turn_please_translate_again.yaml
@@ -222,6 +199,35 @@ python pipelines/pipeline.py --config pipelines/configs/wmt24p.yaml \
 ```
 
 Note: `history_k` and `n_parallel` can be passed to `mt_parallel`, but that scenario is parallel-only and uses only `num_generations`.
+
+
+
+# Running a pipeline with a scenario on a pre-allocated GPU node -- useful for debugging or if you have a running vLLM service
+
+Use this if you already have an interactive GPU allocation and want to run jobs directly on that node:
+
+```bash
+./scripts/install_envs.sh
+source .venv/bin/activate
+
+# 1) Start vLLM in terminal A
+VLLM_CMD=$(python configs/vllm_config/vllm_server_runner.py \
+  --model-config configs/model_configs/qwen-3-4b-instruct-2507.yaml \
+  --vllm-config configs/vllm_config/local_python.yaml)
+bash -lc "$VLLM_CMD"
+
+# 2) In terminal B: write pipeline scripts only
+python pipelines/pipeline.py \
+  --config pipelines/configs/wmt24p.yaml \
+  --model-config configs/model_configs/qwen-3-4b-instruct-2507.yaml \
+  run_name=please_translate_again_qwen4b \
+  submit_jobs=false
+
+# 3) Run scripts directly on the node (no sbatch)
+bash outputs/mt/pipeline_runs/please_translate_again_qwen4b/gen_job.sh
+bash outputs/mt/pipeline_runs/please_translate_again_qwen4b/eval_job.sh
+```
+
 
 
 ## Reuse from another project
