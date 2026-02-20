@@ -26,7 +26,7 @@ Notes:
   - pass config key (matches filename stem), e.g. `model=qwen3-32b-thinking` for `qwen3-32b-thinking.yaml`
 - When selected by config key, runtime still uses the YAML `model:` value for vLLM/parseq requests.
 - `vllm_runtime_config` points to a file under `configs/vllm_config/` and controls whether that model launches via local Python or Apptainer.
-- In this monorepo, `experiments/mt/vllm_config/` remains available as a compatibility symlink to the standalone location.
+- In this monorepo, `configs/vllm_config/` remains available as a compatibility symlink to the standalone location.
 - `ngpus` (optional, default pipeline value `1`) controls GPU count used by the generation SLURM job (`#SBATCH --gres=...`) and default vLLM `--tensor-parallel-size` injection when `ngpus > 1`.
 - If pipeline-level `ngpus` is set to a non-default value, it takes precedence over model config `ngpus`.
 - `scenario_override` only applies to keys that are not already set explicitly by the pipeline (e.g., `model`, `num_generations`, `output_dir`). For those, pipeline values win.

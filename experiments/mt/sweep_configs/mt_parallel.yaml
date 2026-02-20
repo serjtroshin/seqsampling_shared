@@ -1,0 +1,25 @@
+name: mt_parallel
+base_config: pipelines/configs/wmt24p.yaml
+experiment_dir: outputs/mt/pipeline_runs
+
+runner:
+  max_running: 2
+  poll_seconds: 30
+  python_bin: .venv/bin/python
+  log_root: outputs/mt/sweeps/mt_parallel
+  slurm:
+    partition: cpu
+    time: 2-00:00:00
+    cpus_per_task: 2
+    mem: 16G
+    exclude: null
+    additional_args: []
+
+global_overrides:
+  - "scenario=configs/mt/mt_parallel.yaml"
+  - "num_generations=5"
+
+sweeps:
+  - ["tgt=de"]
+  - ["tgt=ru"]
+  - ["tgt=zh", "prompts_path=data/processed/wmt24p/en-zh_CN.jsonl"]

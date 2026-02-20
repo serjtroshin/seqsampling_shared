@@ -1,5 +1,5 @@
 model: google/gemma-3-12b-it
-vllm_runtime_config: experiments/mt/vllm_config/local_python.yaml
+vllm_runtime_config: configs/vllm_config/local_python.yaml
 vllm_server_args:
   - "--max-model-len"
   - "8192"

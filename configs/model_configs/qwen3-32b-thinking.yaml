@@ -1,6 +1,6 @@
 model: Qwen/Qwen3-32B
 ngpus: 4
-vllm_runtime_config: experiments/mt/vllm_config/local_python.yaml
+vllm_runtime_config: configs/vllm_config/local_python.yaml
 vllm_server_args:
   - "--max-model-len"
   - "32768"

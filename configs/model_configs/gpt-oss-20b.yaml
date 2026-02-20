@@ -1,5 +1,5 @@
 model: openai/gpt-oss-20b
-vllm_runtime_config: experiments/mt/vllm_config/apptainer.yaml
+vllm_runtime_config: configs/vllm_config/apptainer.yaml
 vllm_server_args:
   - "--max-model-len"
   - "32768"

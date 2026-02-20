@@ -1,0 +1,28 @@
+name: wmt24p_example
+base_config: pipelines/configs/wmt24p.yaml
+experiment_dir: outputs/mt/pipeline_runs
+
+runner:
+  max_running: 2
+  poll_seconds: 30
+  python_bin: .venv/bin/python
+  log_root: outputs/mt/sweeps
+  slurm:
+    partition: cpu
+    time: 2-00:00:00
+    cpus_per_task: 2
+    mem: 16G
+    exclude: null
+    additional_args: []
+
+global_overrides: []
+
+sweeps:
+  - [
+      "model_config=configs/model_configs/qwen-3-4b-instruct-2507.yaml",
+      "tgt=ru",
+    ]
+  - [
+      "model_config=configs/model_configs/qwen-3-4b-instruct-2507.yaml",
+      "tgt=zh",
+    ]
