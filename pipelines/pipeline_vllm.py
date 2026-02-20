@@ -52,6 +52,11 @@ def write_vllm_runtime_model_config(
 def render_vllm_generation_lines(ctx: VLLMGenerationContext) -> list[str]:
     """Render shell lines that lock, launch, monitor, and use a vLLM server."""
 
+    runner_python = ctx.vllm_runner_python
+    if "/" in runner_python and not Path(runner_python).is_absolute():
+        runner_python = str((ctx.root / runner_python).resolve())
+    runner_python_quoted = shlex.quote(runner_python)
+
     if ctx.slurm_port_from_jobid:
         port_default_setup = textwrap.dedent(
             """
@@ -68,8 +73,8 @@ def render_vllm_generation_lines(ctx: VLLMGenerationContext) -> list[str]:
         port_default_setup = f'export VLLM_PORT="${{VLLM_PORT:-{ctx.server_port}}}"'
 
     port_select_under_lock = textwrap.dedent(
-        """
-        export VLLM_PORT=$(python - <<'PY'
+        f"""
+        export VLLM_PORT=$({runner_python_quoted} - <<'PY'
 import os, socket
 start = int(os.getenv("VLLM_PORT", "8000"))
 scan = int(os.getenv("VLLM_PORT_SCAN", "100"))
@@ -84,7 +89,7 @@ for p in range(start, start + scan):
         chosen = p
         break
 if chosen is None:
-    raise SystemExit(f"No free port found in range [{start}, {start + scan})")
+    raise SystemExit("No free port found in range [%d, %d)" % (start, start + scan))
 print(chosen)
 PY
 )
@@ -93,7 +98,7 @@ PY
 
     detect_actual_port = textwrap.dedent(
         f"""
-        ACTUAL_PORT=$(python - <<'PY'
+        ACTUAL_PORT=$({runner_python_quoted} - <<'PY'
 import os, pathlib, re, sys, time
 log = pathlib.Path({repr(str(ctx.vllm_log_file))})
 vllm_pid = int(os.getenv('VLLM_PID', '0') or '0')
@@ -132,7 +137,7 @@ PY
         f"""
         export VLLM_WAIT_SECS=${{VLLM_WAIT_SECS:-1200}}
         export VLLM_PID
-        python - <<'PY'
+        {runner_python_quoted} - <<'PY'
 import json, os, sys, time, urllib.error, urllib.request
 host = "{ctx.server_host}"
 port = int(os.getenv("VLLM_PORT", "{ctx.server_port}"))
@@ -170,7 +175,7 @@ PY
 
     # Keep existing behavior (runner emits a shell command string).
     vllm_cmd_build = (
-        f'VLLM_CMD=$({shlex.quote(ctx.vllm_runner_python)}'
+        f"VLLM_CMD=$({runner_python_quoted}"
         f" {shlex.quote(str(ctx.vllm_runner_script_path))}"
         f" --model-config {shlex.quote(str(ctx.vllm_model_config_path))}"
         f" --vllm-config {shlex.quote(str(ctx.vllm_runtime_config_path))}"
@@ -239,6 +244,14 @@ PY
         "lock_file=$LOCK_FILE",
         "lock_acquired_at=$(date)",
         "EOF",
+        'HF_TOKEN_FILE="${HOME}/.cache/huggingface/token"',
+        'if [ -z "${HF_TOKEN:-}" ] && [ -f "$HF_TOKEN_FILE" ]; then',
+        '  export HF_TOKEN="$(cat "$HF_TOKEN_FILE")"',
+        "  glog \"HF_TOKEN loaded from ~/.cache/huggingface/token\"",
+        "fi",
+        'if [ -z "${HF_TOKEN:-}" ]; then',
+        "  glog \"WARNING: HF_TOKEN is not set; gated Hugging Face models may fail\"",
+        "fi",
         vllm_cmd_build,
         f"printf '%s\\n' \"$VLLM_CMD\" > {shlex.quote(str(ctx.vllm_generated_command_path))}",
         "glog \"generated vLLM command: $VLLM_CMD\"",

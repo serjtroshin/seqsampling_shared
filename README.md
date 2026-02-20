@@ -14,6 +14,25 @@ Then activate the core environment:
 source .venv/bin/activate
 ```
 
+## Hugging Face auth (required for gated models)
+
+Use the standard Hugging Face login flow once:
+
+```bash
+huggingface-cli login
+# or: hf auth login
+```
+
+This saves your token at `~/.cache/huggingface/token`.
+
+Sweep launchers and SLURM runner scripts in this repo auto-load:
+
+```bash
+export HF_TOKEN="$(cat ~/.cache/huggingface/token)"
+```
+
+if `HF_TOKEN` is not already set.
+
 ## Quick start (minimal example with vLLM server + client)
 0. Make sure you activated the environment (`source .venv/bin/activate`).
 

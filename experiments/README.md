@@ -81,6 +81,15 @@ From `standalone/parallel-sequential-core`:
 ./experiments/parallel_vs_sequential/run_mt_multi_turn_sweep.sh configs/model_configs/<model>.yaml
 ```
 
+Before running gated models, authenticate once with the standard Hugging Face CLI:
+
+```bash
+huggingface-cli login
+# or: hf auth login
+```
+
+The sweep launchers then auto-load `HF_TOKEN` from `~/.cache/huggingface/token`.
+
 Output folders are separated:
 
 - `mt_parallel` sweep runs: `outputs/mt/pipeline_runs/<lang>/mt_parallel/<model>/...`

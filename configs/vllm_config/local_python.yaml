@@ -7,7 +7,16 @@ entrypoint: api_server          # api_server | serve
 python_bin: .venv/bin/python
 vllm_bin: vllm
 
-# Optional env vars prefixed before command
+# When true (default), the runner sets writable cache dirs and exports:
+# XDG_CACHE_HOME, HF_HOME, HUGGINGFACE_HUB_CACHE, VLLM_CACHE_DIR,
+# TORCH_EXTENSIONS_DIR, TRITON_CACHE_DIR, FLASHINFER_*.
+use_default_cache_env: true
+
+# Optional base for auto cache layout (default: $SLURM_TMPDIR/parseq_vllm_cache
+# or /tmp/$USER/parseq_vllm_cache).
+# cache_base: /tmp/stroshi/parseq_vllm_cache
+
+# Optional env overrides (override/extend defaults above)
 env: {}
 
 # Appended after model_config.vllm_server_args

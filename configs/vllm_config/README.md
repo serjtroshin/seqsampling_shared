@@ -86,10 +86,16 @@ Optional:
 - `entrypoint` (`api_server` or `serve`, default `api_server`)
 - `python_bin` (default current interpreter path)
 - `vllm_bin` (default `vllm`)
-- `env` (dict of `KEY: value`, default `{}`)
+- `use_default_cache_env` (default `true`)
+- `cache_base` (default `$SLURM_TMPDIR/parseq_vllm_cache` or `/tmp/$USER/parseq_vllm_cache`)
+- `env` (dict of `KEY: value`, merged after defaults)
 - `extra_server_args` (list, default `[]`)
+- `hf_token` (optional static token value; exported as `HF_TOKEN` if not already set)
 
 Behavior:
 - Builds a direct local command
-- Prefixes `env` variables
+- Creates writable cache dirs and exports cache env vars by default:
+  `XDG_CACHE_HOME`, `HF_HOME`, `HUGGINGFACE_HUB_CACHE`, `VLLM_CACHE_DIR`,
+  `TORCH_EXTENSIONS_DIR`, `TRITON_CACHE_DIR`, `FLASHINFER_*`
+- Merges explicit `env` overrides after defaults
 - Appends model `vllm_server_args`, then `extra_server_args`

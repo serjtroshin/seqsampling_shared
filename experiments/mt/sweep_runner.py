@@ -72,6 +72,12 @@ class SweepTask:
     detail: str = ""
 
 
+@dataclass
+class SlurmJobInfo:
+    state: str
+    reason: str
+
+
 def _slugify(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
 
@@ -285,37 +291,81 @@ def _eval_done(run_dir: Path) -> bool:
     return "[eval] done" in _read_text(out_path).lower()
 
 
-def _query_active_slurm_jobs(
+def _query_slurm_jobs(
     root: Path, job_ids: set[str], logger: logging.Logger
-) -> set[str] | None:
+) -> dict[str, SlurmJobInfo] | None:
     if not job_ids:
-        return set()
-    cmd = ["squeue", "-h", "-o", "%i", "-j", ",".join(sorted(job_ids))]
+        return {}
+    cmd = ["squeue", "-h", "-o", "%i|%t|%R", "-j", ",".join(sorted(job_ids))]
     result = subprocess.run(cmd, cwd=root, capture_output=True, text=True)
     if result.returncode != 0:
         logger.warning("squeue failed; will keep tasks active until done/error files appear.")
         return None
-    return {line.strip() for line in result.stdout.splitlines() if line.strip()}
+    jobs: dict[str, SlurmJobInfo] = {}
+    for raw in result.stdout.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        parts = line.split("|", 2)
+        if len(parts) != 3:
+            continue
+        job_id, state, reason = parts
+        jobs[job_id.strip()] = SlurmJobInfo(state=state.strip(), reason=reason.strip())
+    return jobs
 
 
-def _task_status(task: SweepTask, active_job_ids: set[str] | None) -> tuple[str, str]:
+def _cancel_jobs(root: Path, job_ids: set[str], logger: logging.Logger) -> None:
+    if not job_ids:
+        return
+    cmd = ["scancel", *sorted(job_ids)]
+    result = subprocess.run(cmd, cwd=root, capture_output=True, text=True)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "scancel failed").strip()
+        logger.warning("[cancel-failed] jobs=%s detail=%s", ",".join(sorted(job_ids)), detail)
+        return
+    logger.info("[cancel] jobs=%s", ",".join(sorted(job_ids)))
+
+
+def _is_dependency_never_satisfied(job: SlurmJobInfo | None) -> bool:
+    if job is None:
+        return False
+    if job.state != "PD":
+        return False
+    reason = job.reason.lower().strip()
+    reason = reason.strip("()")
+    return "dependencyneversatisfied" in reason
+
+
+def _task_status(
+    task: SweepTask, job_map: dict[str, SlurmJobInfo] | None
+) -> tuple[str, str, set[str]]:
+    known_job_ids = {job_id for job_id in [task.gen_job_id, task.eval_job_id] if job_id}
+
     if _eval_done(task.run_dir):
-        return "DONE", "evaluation finished"
+        return "DONE", "evaluation finished", set()
 
     gen_err = task.run_dir / "slurm_gen.err"
     eval_err = task.run_dir / "slurm_eval.err"
     if _contains_fatal_error(gen_err) or _contains_fatal_error(eval_err):
-        return "FAILED", "fatal error found in slurm stderr"
+        cancel_ids = set()
+        if job_map is not None:
+            cancel_ids = {job_id for job_id in known_job_ids if job_id in job_map}
+        return "FAILED", "fatal error found in slurm stderr", cancel_ids
 
-    known_job_ids = {job_id for job_id in [task.gen_job_id, task.eval_job_id] if job_id}
+    if job_map is not None and _is_dependency_never_satisfied(
+        job_map.get(task.eval_job_id or "")
+    ):
+        cancel_ids = {job_id for job_id in known_job_ids if job_id in job_map}
+        return "FAILED", "evaluation dependency never satisfied", cancel_ids
+
     if known_job_ids:
-        if active_job_ids is None:
-            return "ACTIVE", "squeue unavailable; waiting for done/error logs"
-        if known_job_ids & active_job_ids:
-            return "ACTIVE", "slurm job still active"
-        return "FAILED", "slurm jobs no longer active and eval did not finish"
+        if job_map is None:
+            return "ACTIVE", "squeue unavailable; waiting for done/error logs", set()
+        if any(job_id in job_map for job_id in known_job_ids):
+            return "ACTIVE", "slurm job still active", set()
+        return "FAILED", "slurm jobs no longer active and eval did not finish", set()
 
-    return "ACTIVE", "waiting for logs"
+    return "ACTIVE", "waiting for logs", set()
 
 
 def _build_reentry_args(
@@ -366,6 +416,13 @@ def _render_master_job_script(
         "",
         "set -euo pipefail",
         f"cd {shlex.quote(str(root))}",
+        'HF_TOKEN_FILE="${HOME}/.cache/huggingface/token"',
+        'if [ -z "${HF_TOKEN:-}" ] && [ -f "$HF_TOKEN_FILE" ]; then',
+        '  export HF_TOKEN="$(cat "$HF_TOKEN_FILE")"',
+        "fi",
+        'if [ -z "${HF_TOKEN:-}" ]; then',
+        '  echo "[runner] WARNING: HF_TOKEN is not set; gated Hugging Face models may fail." >&2',
+        "fi",
         cmd_line,
         "",
     ]
@@ -504,11 +561,11 @@ def main() -> None:
 
     while pending or active:
         job_ids = {job_id for t in active for job_id in [t.gen_job_id, t.eval_job_id] if job_id}
-        active_job_ids = _query_active_slurm_jobs(root, job_ids, logger=logger)
+        job_map = _query_slurm_jobs(root, job_ids, logger=logger)
 
         still_active: list[SweepTask] = []
         for task in active:
-            status, detail = _task_status(task, active_job_ids)
+            status, detail, cancel_ids = _task_status(task, job_map)
             task.detail = detail
             if status == "DONE":
                 task.state = "DONE"
@@ -517,6 +574,7 @@ def main() -> None:
             elif status == "FAILED":
                 task.state = "FAILED"
                 failed.append(task)
+                _cancel_jobs(root, cancel_ids, logger=logger)
                 logger.error("[failed] %s run=%s detail=%s", task.task_id, task.run_name, detail)
             else:
                 still_active.append(task)

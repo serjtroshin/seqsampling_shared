@@ -28,6 +28,17 @@ WORK_DIR="outputs/mt/sweeps/mt_parallel/${MODEL_SLUG}_submit_${TS}"
 
 source .venv/bin/activate
 
+if [[ -z "${HF_TOKEN:-}" ]]; then
+  if [[ -f "${HOME}/.cache/huggingface/token" ]]; then
+    export HF_TOKEN="$(cat ~/.cache/huggingface/token)"
+    echo "[info] Loaded HF_TOKEN from ~/.cache/huggingface/token"
+  else
+    echo "[error] HF token not found at ~/.cache/huggingface/token"
+    echo "        Run 'huggingface-cli login' (or 'hf auth login') first."
+    exit 1
+  fi
+fi
+
 python experiments/mt/sweep_runner.py \
   --config experiments/mt/sweep_configs/mt_parallel.yaml \
   --work-dir "${WORK_DIR}" \
