@@ -102,7 +102,7 @@ PY
 import os, pathlib, re, sys, time
 log = pathlib.Path({repr(str(ctx.vllm_log_file))})
 vllm_pid = int(os.getenv('VLLM_PID', '0') or '0')
-detect_secs = int(os.getenv('VLLM_PORT_DETECT_SECS', '300'))
+detect_secs = int(os.getenv('VLLM_PORT_DETECT_SECS', '3600'))
 patterns = [
     re.compile(r'Starting vLLM API server .*:(\\d+)'),
     re.compile(r'Uvicorn running on .*:(\\d+)'),

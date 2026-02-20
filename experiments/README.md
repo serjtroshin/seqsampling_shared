@@ -8,6 +8,7 @@ This folder contains runnable experiment helpers for the standalone project.
   sweep launcher scripts.
   - `run_mt_parallel_sweep.sh`
   - `run_mt_multi_turn_sweep.sh`
+  - `run_mt_multi_turn_plus_doc_sweep.sh`
 - `mt/sweep_runner.py`:
   minimal FIFO sweep queue for MT pipeline runs.
 - `mt/sweep_configs/example.yaml`:
@@ -79,6 +80,7 @@ From `standalone/parallel-sequential-core`:
 ```bash
 ./experiments/parallel_vs_sequential/run_mt_parallel_sweep.sh configs/model_configs/<model>.yaml
 ./experiments/parallel_vs_sequential/run_mt_multi_turn_sweep.sh configs/model_configs/<model>.yaml
+./experiments/parallel_vs_sequential/run_mt_multi_turn_plus_doc_sweep.sh configs/model_configs/<model>.yaml
 ```
 
 Before running gated models, authenticate once with the standard Hugging Face CLI:
@@ -94,3 +96,20 @@ Output folders are separated:
 
 - `mt_parallel` sweep runs: `outputs/mt/pipeline_runs/<lang>/mt_parallel/<model>/...`
 - multi-turn sweep runs: `outputs/mt/pipeline_runs/<lang>/mt_multi_turn_please_translate_again/<model>/...`
+
+## Plot Sweep Results
+
+Use `experiments/plots/plot_sweep_results.py` to visualize per-run evaluation results from a sweep work dir:
+
+```bash
+python experiments/plots/plot_sweep_results.py \
+  --sweep-dir outputs/mt/sweeps/mt_multi_turn/<submit_dir>
+```
+
+This creates:
+
+- sweep-level metric summary plots in `<sweep-dir>/plots/` (one bar per experiment run)
+- per-experiment turn curves in `<sweep-dir>/plots/turn_curves/`:
+  average quality vs `sequential_id` (for parallel sampling this is turn `0` only)
+
+The script uses the shared structured loaders in `experiments/plots/utils.py`.
