@@ -41,7 +41,7 @@ except ImportError:
 class EvalConfig:
     tool_dir: str = "evaluation/mt"
     tool_python: str = ".venv/bin/python"
-    config_path: Optional[str] = None
+    config_path: Optional[str] = "evaluation/mt/metrics.example.json"
     metrics: list[str] = field(default_factory=lambda: ["comet_kiwi_qe"])
     batch_size: int = 8
 

@@ -21,7 +21,7 @@ scenario_override:
   temperature: 0.7
   top_k: 20
   top_p: 0.8
-  max_tokens: 16392
+  max_tokens: 8192
   vllm_extra_body:
     chat_template_kwargs:
       enable_thinking: false

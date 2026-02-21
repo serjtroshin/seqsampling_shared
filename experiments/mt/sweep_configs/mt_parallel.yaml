@@ -17,7 +17,7 @@ runner:
 
 global_overrides:
   - "scenario=configs/mt/mt_parallel.yaml"
-  - "num_generations=5"
+  - "num_generations=50"
 
 sweeps:
   - ["tgt=de"]

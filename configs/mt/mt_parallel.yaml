@@ -20,7 +20,7 @@ max_tokens: 500
 temperature: 0.9
 top_p: 0.95
 top_k: 5
-num_generations: 10      # controls n (fan-out) in parallel sampler
+num_generations: 50      # controls n (fan-out) in parallel sampler
 n_parallel: 1             # kept for symmetry; not used by ParallelSampler
 history_k: 1              # unused in parallel mode
 vllm_base_url: http://localhost:8000/v1
