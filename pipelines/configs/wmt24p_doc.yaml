@@ -8,3 +8,7 @@ extra_data_fields:
   - domain
   - document_id
   - segment_id
+slurm_eval:
+  mem: 80G
+slurm_gen:
+  time: 2-00:00:00

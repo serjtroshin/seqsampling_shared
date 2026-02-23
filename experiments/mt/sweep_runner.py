@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import logging
 import re
 import shlex
@@ -171,12 +172,73 @@ def _infer_model_folder(overrides: list[str]) -> str:
     return "unknown-model"
 
 
+@functools.lru_cache(maxsize=128)
+def _load_yaml_cached(path_str: str):
+    try:
+        return OmegaConf.load(path_str)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _scenario_param(root: Path, overrides: list[str], key: str) -> str | None:
+    direct = _extract_override(overrides, key)
+    if direct is not None:
+        return str(direct)
+
+    scenario = _extract_override(overrides, "scenario")
+    if not scenario:
+        return None
+    scenario_path = _resolve_path(root, scenario)
+    if not scenario_path.exists():
+        return None
+
+    cfg = _load_yaml_cached(str(scenario_path))
+    if cfg is None:
+        return None
+    value = OmegaConf.select(cfg, key)
+    if value is None:
+        return None
+    return str(value)
+
+
+def _sanitize_sampling_value(value: str | None) -> str:
+    if value is None:
+        return "na"
+    sanitized = str(value).strip().replace("/", "_")
+    sanitized = re.sub(r"\s+", "", sanitized)
+    return sanitized or "na"
+
+
+def _infer_sampling_folder(root: Path, overrides: list[str]) -> str:
+    temperature = _sanitize_sampling_value(_scenario_param(root, overrides, "temperature"))
+    top_p = _sanitize_sampling_value(_scenario_param(root, overrides, "top_p"))
+    top_k = _sanitize_sampling_value(_scenario_param(root, overrides, "top_k"))
+    return f"temp_{temperature}.p{top_p}.k{top_k}"
+
+
+def _resolve_experiment_base(root: Path, raw: str | Path) -> Path:
+    """Resolve experiment base as outputs/mt/<exp_dir> by default."""
+    outputs_mt_root = (root / "outputs" / "mt").resolve()
+    candidate = Path(raw)
+    if candidate.is_absolute():
+        return candidate.resolve()
+
+    normalized = str(candidate).strip()
+    if normalized.startswith("outputs/mt/"):
+        normalized = normalized[len("outputs/mt/") :]
+    elif normalized == "outputs/mt":
+        normalized = ""
+
+    return (outputs_mt_root / normalized).resolve()
+
+
 def _default_output_root(root: Path, experiment_dir: Path, overrides: list[str]) -> str:
     run_base = (
         experiment_dir
+        / _infer_model_folder(overrides)
+        / _infer_sampling_folder(root, overrides)
         / _infer_language_folder(overrides)
         / _infer_scenario_folder(overrides)
-        / _infer_model_folder(overrides)
     )
     try:
         return str(run_base.relative_to(root))
@@ -372,11 +434,14 @@ def _build_reentry_args(
     *,
     config_path: Path,
     work_dir: Path,
+    experiment_dir: Path | None,
     max_running: int | None,
     poll_seconds: int | None,
     overrides: list[str],
 ) -> list[str]:
     args = ["--config", str(config_path), "--work-dir", str(work_dir)]
+    if experiment_dir is not None:
+        args.extend(["--experiment-dir", str(experiment_dir)])
     if max_running is not None:
         args.extend(["--max-running", str(max_running)])
     if poll_seconds is not None:
@@ -473,6 +538,15 @@ def parse_args() -> argparse.Namespace:
         help="Optional work directory for sweep logs.",
     )
     parser.add_argument(
+        "--experiment-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Optional override for sweep experiment base directory "
+            "(default comes from config 'experiment_dir')."
+        ),
+    )
+    parser.add_argument(
         "--max-running",
         type=int,
         default=None,
@@ -511,7 +585,10 @@ def main() -> None:
     poll_seconds = args.poll_seconds if args.poll_seconds is not None else cfg.runner.poll_seconds
     python_bin = _resolve_python_bin(root, cfg.runner.python_bin)
     base_config = _resolve_path(root, cfg.base_config)
-    experiment_dir = _resolve_path(root, cfg.experiment_dir)
+    experiment_dir = _resolve_experiment_base(
+        root,
+        args.experiment_dir if args.experiment_dir is not None else cfg.experiment_dir,
+    )
 
     if args.work_dir is not None:
         work_dir = _resolve_path(root, args.work_dir)
@@ -524,6 +601,7 @@ def main() -> None:
         module_args = _build_reentry_args(
             config_path=config_path,
             work_dir=work_dir,
+            experiment_dir=args.experiment_dir,
             max_running=args.max_running,
             poll_seconds=args.poll_seconds,
             overrides=list(args.override or []),

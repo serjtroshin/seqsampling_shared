@@ -143,6 +143,28 @@ class CometReferenceMetric(_CometMetric):
 
 
 class XCometXXLMetric(CometReferenceMetric):
+    def __init__(self, config: CometReferenceConfig) -> None:
+        super().__init__(config)
+        self._half_precision_applied = False
+        self._half_precision_attempted = False
+
+    def _load_model(self):
+        model = super()._load_model()
+        use_gpu = bool(getattr(self.config, "use_gpu_if_available", True))
+        if (
+            use_gpu
+            and torch.cuda.is_available()
+            and not self._half_precision_attempted
+            and hasattr(model, "half")
+        ):
+            self._half_precision_attempted = True
+            try:
+                model.half()
+                self._half_precision_applied = True
+            except Exception:  # noqa: BLE001
+                self._half_precision_applied = False
+        return model
+
     def augment_report(self, report: dict[str, Any], records: Sequence[SampleRecord]) -> None:
         del records
         system_score = self._extract_field(self._last_prediction, "system_score")

@@ -10,3 +10,7 @@ extra_data_fields:
   - document_id
   - segment_id
   - is_bad_source
+slurm_eval:
+  mem: 80G
+slurm_gen:
+  time: 2-00:00:00

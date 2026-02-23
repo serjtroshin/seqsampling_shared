@@ -4,13 +4,6 @@
   "metrics": [
     {
       "type": "comet_ref",
-      "name": "xcomet_xxl",
-      "model": "Unbabel/XCOMET-XXL",
-      "batch_size": 2,
-      "use_gpu_if_available": true
-    },
-    {
-      "type": "comet_ref",
       "name": "comet_qe",
       "model": "Unbabel/wmt22-comet-da",
       "batch_size": 8,
