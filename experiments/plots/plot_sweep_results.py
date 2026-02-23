@@ -16,16 +16,28 @@ import pandas as pd
 
 try:
     from experiments.plots.utils import load_sweep_dataframe, load_sweep_score_dataframe
+    from experiments.plots.main_plots.plot_run_turn_curve import _plot_run_turn_curve
 except ModuleNotFoundError:
     from utils import load_sweep_dataframe, load_sweep_score_dataframe
+    from main_plots.plot_run_turn_curve import _plot_run_turn_curve
 
 
 def _slugify(value: str) -> str:
+    """Convert arbitrary text into a filesystem-safe slug.
+
+    Args:
+        value: Raw string to normalize.
+    """
     slug = re.sub(r"[^a-zA-Z0-9]+", "_", value.strip())
     return slug.strip("_") or "metric"
 
 
 def _parse_multi_args(raw_values: list[str] | None) -> list[str]:
+    """Parse repeatable/comma-separated CLI values into a unique ordered list.
+
+    Args:
+        raw_values: Raw values from argparse (for example from repeated --metric).
+    """
     if not raw_values:
         return []
     values: list[str] = []
@@ -40,6 +52,11 @@ def _parse_multi_args(raw_values: list[str] | None) -> list[str]:
 
 
 def _run_label(row: pd.Series) -> str:
+    """Build compact label for a run from task/language metadata.
+
+    Args:
+        row: Run-level dataframe row with task_id/tgt/run_index fields.
+    """
     parts: list[str] = []
     task_id = row.get("task_id")
     tgt = row.get("tgt")
@@ -57,6 +74,13 @@ def _metric_out_path(
     metric: str,
     variant: str,
 ) -> Path:
+    """Build output path for the sweep-level metric bar plot.
+
+    Args:
+        out_dir: Root directory where plots are saved.
+        metric: Metric name (for example comet_qe).
+        variant: Metric variant (for example default or FA).
+    """
     variant_suffix = "" if variant == "default" else f"_{_slugify(variant)}"
     return out_dir / f"sweep_scores_{_slugify(metric)}{variant_suffix}.png"
 
@@ -67,6 +91,14 @@ def _run_turn_out_path(
     metric: str,
     variant: str,
 ) -> Path:
+    """Build output path for one run's turn-curve plot.
+
+    Args:
+        out_dir: Root directory where plots are saved.
+        run_row: Run-level dataframe row.
+        metric: Metric name.
+        variant: Metric variant.
+    """
     run_idx = int(run_row["run_index"])
     task = str(run_row.get("task_id") or f"r{run_idx:03d}")
     tgt = str(run_row.get("tgt") or "unknown")
@@ -83,6 +115,16 @@ def _plot_metric_variant(
     sweep_name: str,
     out_path: Path,
 ) -> None:
+    """Render a sweep-level bar plot of average score per run.
+
+    Args:
+        base_runs_df: One row per run with run metadata used for labels/colors.
+        metric_df: Filtered metric rows for a single metric+variant.
+        metric: Metric name.
+        variant: Variant name.
+        sweep_name: Name shown in the plot title.
+        out_path: Target PNG path.
+    """
     metric_cols = ["run_name", "average_score"]
     merged = base_runs_df.merge(metric_df[metric_cols], on="run_name", how="left")
     merged = merged.sort_values("run_index").reset_index(drop=True)
@@ -167,57 +209,12 @@ def _plot_metric_variant(
     print(f"saved_plot: {out_path}")
 
 
-def _plot_run_turn_curve(
-    run_row: pd.Series,
-    run_score_df: pd.DataFrame,
-    metric: str,
-    variant: str,
-    sweep_name: str,
-    out_path: Path,
-) -> bool:
-    turn_df = run_score_df.copy()
-    turn_df["sequential_id"] = pd.to_numeric(turn_df["sequential_id"], errors="coerce")
-    turn_df["quality"] = pd.to_numeric(turn_df["quality"], errors="coerce")
-    turn_df = turn_df.dropna(subset=["sequential_id", "quality"])
-    if turn_df.empty:
-        return False
-
-    turn_df["sequential_id"] = turn_df["sequential_id"].astype(int)
-    curve = (
-        turn_df.groupby("sequential_id", as_index=False)
-        .agg(mean_quality=("quality", "mean"), count=("quality", "size"))
-        .sort_values("sequential_id")
-    )
-    if curve.empty:
-        return False
-
-    x = curve["sequential_id"].tolist()
-    y = curve["mean_quality"].tolist()
-    counts = curve["count"].tolist()
-
-    fig, ax = plt.subplots(figsize=(6.6, 4.4))
-    ax.plot(x, y, marker="o", linewidth=2.0, color="#1f77b4")
-    for xi, yi, cnt in zip(x, y, counts):
-        ax.text(xi, yi + 0.002, f"{yi:.3f}\n(n={cnt})", ha="center", va="bottom", fontsize=8)
-
-    task = str(run_row.get("task_id") or f"r{int(run_row['run_index']):03d}")
-    tgt = str(run_row.get("tgt") or "unknown")
-    status = str(run_row.get("status") or "UNKNOWN")
-    ax.set_title(f"{sweep_name} | {task}/{tgt} | {metric} ({variant}) | {status}")
-    ax.set_xlabel("sequential_id (turn_id)")
-    ax.set_ylabel("mean quality")
-    ax.grid(alpha=0.25, linewidth=0.7)
-    ax.set_xticks(x)
-
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=160, bbox_inches="tight")
-    plt.close(fig)
-    print(f"saved_plot: {out_path}")
-    return True
-
-
 def _build_arg_parser() -> argparse.ArgumentParser:
+    """Create CLI parser for sweep plotting entrypoint.
+
+    Args:
+        None.
+    """
     parser = argparse.ArgumentParser(
         description="Plot sweep run results (average_score) from MT evaluation reports."
     )
@@ -249,6 +246,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """Run sweep plotting pipeline from CLI arguments.
+
+    Args:
+        None.
+    """
     args = _build_arg_parser().parse_args()
     df = load_sweep_dataframe(args.sweep_dir)
     score_df = load_sweep_score_dataframe(args.sweep_dir)
@@ -291,6 +293,8 @@ def main() -> None:
                 "run_name",
                 "status",
                 "tgt",
+                "lp",
+                "scenario_name",
             ]
         ]
     )

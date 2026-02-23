@@ -42,6 +42,11 @@ class SweepResults:
 
 
 def _safe_float(value: Any) -> float | None:
+    """Safely coerce value to float.
+
+    Args:
+        value: Arbitrary value to convert.
+    """
     try:
         if value is None:
             return None
@@ -51,6 +56,11 @@ def _safe_float(value: Any) -> float | None:
 
 
 def _safe_int(value: Any) -> int | None:
+    """Safely coerce value to int.
+
+    Args:
+        value: Arbitrary value to convert.
+    """
     try:
         if value is None:
             return None
@@ -60,6 +70,11 @@ def _safe_int(value: Any) -> int | None:
 
 
 def _load_yaml_dict(path: Path) -> dict[str, Any]:
+    """Load YAML file and return dict payload (or empty dict).
+
+    Args:
+        path: YAML file path to load.
+    """
     if not path.exists():
         return {}
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -69,6 +84,11 @@ def _load_yaml_dict(path: Path) -> dict[str, Any]:
 
 
 def _load_json_dict(path: Path) -> dict[str, Any]:
+    """Load JSON file and return dict payload.
+
+    Args:
+        path: JSON file path to load.
+    """
     data = json.loads(path.read_text(encoding="utf-8"))
     if isinstance(data, dict):
         return data
@@ -76,6 +96,11 @@ def _load_json_dict(path: Path) -> dict[str, Any]:
 
 
 def _load_jsonl_records(path: Path) -> list[dict[str, Any]]:
+    """Load JSONL records as a list of dictionaries.
+
+    Args:
+        path: JSONL file path to parse.
+    """
     rows: list[dict[str, Any]] = []
     with path.open("r", encoding="utf-8") as handle:
         for line in handle:
@@ -89,6 +114,11 @@ def _load_jsonl_records(path: Path) -> list[dict[str, Any]]:
 
 
 def _metric_variant_from_report(path: Path) -> tuple[str, str]:
+    """Infer metric and variant from report filename.
+
+    Args:
+        path: Metric report path, for example comet_qe.json or comet_qe.FA.json.
+    """
     metric = path.stem
     variant = "default"
     if metric.endswith(".FA"):
@@ -98,6 +128,11 @@ def _metric_variant_from_report(path: Path) -> tuple[str, str]:
 
 
 def _load_run_dirs(index_path: Path) -> list[Path]:
+    """Load run directory list from experiment_run_dirs.txt.
+
+    Args:
+        index_path: Path to experiment_run_dirs.txt.
+    """
     if not index_path.exists():
         raise FileNotFoundError(f"Sweep run index not found: {index_path}")
     run_dirs: list[Path] = []
@@ -110,6 +145,11 @@ def _load_run_dirs(index_path: Path) -> list[Path]:
 
 
 def _parse_sweep_log(path: Path) -> dict[str, dict[str, str]]:
+    """Parse sweep.log and map run_name to task_id/status metadata.
+
+    Args:
+        path: sweep.log path.
+    """
     if not path.exists():
         return {}
 
@@ -146,6 +186,11 @@ def _parse_sweep_log(path: Path) -> dict[str, dict[str, str]]:
 
 
 def _scenario_meta_for_run(run_dir: Path) -> dict[str, Any]:
+    """Load resolved scenario metadata for one run when present.
+
+    Args:
+        run_dir: Run directory containing generation artifacts.
+    """
     generation_dir = run_dir / "generation"
     if not generation_dir.exists():
         return {}
@@ -156,6 +201,12 @@ def _scenario_meta_for_run(run_dir: Path) -> dict[str, Any]:
 
 
 def _infer_lp(run_dir: Path, scenario_meta: dict[str, Any]) -> str | None:
+    """Infer language-pair string (for example en-de).
+
+    Args:
+        run_dir: Run directory used for fallback path-based inference.
+        scenario_meta: Parsed scenario_resolved.yaml dictionary.
+    """
     src = scenario_meta.get("src")
     tgt = scenario_meta.get("tgt")
     if isinstance(src, str) and isinstance(tgt, str) and src and tgt:
@@ -168,6 +219,12 @@ def _infer_lp(run_dir: Path, scenario_meta: dict[str, Any]) -> str | None:
 
 
 def _infer_run_status(log_status: str | None, metrics: list[SweepMetricResult]) -> str:
+    """Infer run status from log status fallback and metric presence.
+
+    Args:
+        log_status: Status parsed from sweep.log if available.
+        metrics: Metric summaries discovered in evaluation reports.
+    """
     if log_status:
         return log_status
     if metrics:
@@ -176,6 +233,11 @@ def _infer_run_status(log_status: str | None, metrics: list[SweepMetricResult]) 
 
 
 def _load_metric_reports(run_dir: Path) -> list[SweepMetricResult]:
+    """Load metric report summaries from a run's evaluation directory.
+
+    Args:
+        run_dir: Run directory that may contain evaluation/*.json reports.
+    """
     evaluation_dir = run_dir / "evaluation"
     if not evaluation_dir.is_dir():
         return []
@@ -201,6 +263,12 @@ def _load_metric_reports(run_dir: Path) -> list[SweepMetricResult]:
 
 
 def _fallback_sequential_id(response_idx: int, scenario_meta: dict[str, Any]) -> int:
+    """Fallback mapping from response index to sequential_id.
+
+    Args:
+        response_idx: Zero-based response index in the sample list.
+        scenario_meta: Scenario metadata dict used to detect parallel mode.
+    """
     sampling_mode = str(scenario_meta.get("sampling_mode", "")).strip().lower()
     scenario_name = str(scenario_meta.get("name", "")).strip().lower()
     if sampling_mode == "parallel" or "parallel" in scenario_name:
@@ -209,6 +277,12 @@ def _fallback_sequential_id(response_idx: int, scenario_meta: dict[str, Any]) ->
 
 
 def _resolve_sample_file(report: dict[str, Any], run_dir: Path) -> Path | None:
+    """Resolve source sample JSONL file for a metric report.
+
+    Args:
+        report: Parsed metric report dictionary.
+        run_dir: Run directory for relative-path and fallback lookup.
+    """
     raw_path = report.get("file")
     if isinstance(raw_path, str) and raw_path.strip():
         candidate = Path(raw_path.strip())
@@ -228,6 +302,12 @@ def _response_to_turn_map(
     sample_file: Path,
     scenario_meta: dict[str, Any],
 ) -> dict[tuple[str, int], int]:
+    """Build (prompt_id, response_idx) -> sequential_id map from sample records.
+
+    Args:
+        sample_file: JSONL file with generation/sample records.
+        scenario_meta: Scenario metadata used for fallback turn ids.
+    """
     turn_by_key: dict[tuple[str, int], int] = {}
     rows = _load_jsonl_records(sample_file)
     for row in rows:
@@ -259,6 +339,11 @@ def _response_to_turn_map(
 
 
 def load_sweep_results(sweep_dir: str | Path) -> SweepResults:
+    """Load structured run-level sweep results from a sweep work directory.
+
+    Args:
+        sweep_dir: Sweep directory containing sweep.log and experiment_run_dirs.txt.
+    """
     root = Path(sweep_dir).resolve()
     if not root.exists():
         raise FileNotFoundError(f"Sweep directory not found: {root}")
@@ -309,6 +394,11 @@ def load_sweep_results(sweep_dir: str | Path) -> SweepResults:
 
 
 def load_sweep_dataframe(sweep_dir: str | Path) -> pd.DataFrame:
+    """Build run+metric dataframe for one sweep.
+
+    Args:
+        sweep_dir: Sweep directory containing run index/log/artifacts.
+    """
     results = load_sweep_results(sweep_dir)
     rows: list[dict[str, Any]] = []
 
@@ -357,6 +447,11 @@ def load_sweep_dataframe(sweep_dir: str | Path) -> pd.DataFrame:
 
 
 def load_sweep_score_dataframe(sweep_dir: str | Path) -> pd.DataFrame:
+    """Build score-level dataframe with sequential_id mapping for one sweep.
+
+    Args:
+        sweep_dir: Sweep directory containing run artifacts and reports.
+    """
     results = load_sweep_results(sweep_dir)
     rows: list[dict[str, Any]] = []
 
@@ -429,6 +524,11 @@ def load_sweep_score_dataframe(sweep_dir: str | Path) -> pd.DataFrame:
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
+    """Create CLI parser for utility dataframe loader.
+
+    Args:
+        None.
+    """
     parser = argparse.ArgumentParser(
         description="Load MT sweep results into a structured pandas DataFrame."
     )
@@ -454,6 +554,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """Run utility CLI: print/load dataframe and optionally save CSV.
+
+    Args:
+        None.
+    """
     args = _build_arg_parser().parse_args()
     df = load_sweep_dataframe(args.sweep_dir)
     if df.empty:
