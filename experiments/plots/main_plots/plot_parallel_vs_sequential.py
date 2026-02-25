@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 from pprint import pprint
 from pathlib import Path
@@ -72,16 +73,10 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="Variant filter (repeatable or comma-separated). Default: all available.",
     )
     parser.add_argument(
-        "--parallel-iqr-low-threshold",
+        "--parallel-iqr-tail-percent",
         type=float,
-        default=0.01,
-        help="Save sample groups where parallel IQR is <= this value.",
-    )
-    parser.add_argument(
-        "--parallel-iqr-high-threshold",
-        type=float,
-        default=0.2,
-        help="Save sample groups where parallel IQR is > this value.",
+        default=5.0,
+        help="Save low/high grouped samples using this tail percent on each side (default: 5).",
     )
     return parser
 
@@ -379,8 +374,9 @@ def _write_grouped_samples_jsonl(
     sequential_row: pd.Series,
     metric: str,
     variant: str,
-    low_threshold: float,
-    high_threshold: float,
+    tail_percent: float,
+    tail_count: int,
+    total_prompts: int,
 ) -> None:
     """Write grouped prompt sample comparisons for one bucket to JSONL.
 
@@ -396,8 +392,9 @@ def _write_grouped_samples_jsonl(
         sequential_row: Sequential run metadata row.
         metric: Metric name.
         variant: Metric variant.
-        low_threshold: Parallel low-IQR threshold.
-        high_threshold: Parallel high-IQR threshold.
+        tail_percent: Percentile size used for low/high tails.
+        tail_count: Number of prompts selected in this tail.
+        total_prompts: Total aligned prompt count.
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
     txt_path = out_path.with_suffix(".txt")
@@ -421,8 +418,9 @@ def _write_grouped_samples_jsonl(
                 "prompt_id": prompt_id,
                 "metric": metric,
                 "variant": variant,
-                "parallel_iqr_low_threshold": low_threshold,
-                "parallel_iqr_high_threshold": high_threshold,
+                "parallel_iqr_tail_percent": tail_percent,
+                "parallel_iqr_tail_count": tail_count,
+                "parallel_iqr_total_prompts": total_prompts,
                 "parallel_run_name": str(parallel_row.get("run_name") or ""),
                 "parallel_scenario_name": str(parallel_row.get("scenario_name") or ""),
                 "sequential_run_name": str(sequential_row.get("run_name") or ""),
@@ -486,8 +484,7 @@ def _save_parallel_iqr_grouped_samples(
     seq_aligned_df: pd.DataFrame,
     parallel_prompt_index: dict[str, dict[str, Any]],
     sequential_prompt_index: dict[str, dict[str, Any]],
-    low_threshold: float,
-    high_threshold: float,
+    tail_percent: float,
 ) -> None:
     """Save low/high parallel-IQR prompt buckets with parallel+sequential samples.
 
@@ -501,8 +498,7 @@ def _save_parallel_iqr_grouped_samples(
         seq_aligned_df: Sequential prompt stats aligned to parallel prompt order.
         parallel_prompt_index: prompt_id -> parallel sample payload.
         sequential_prompt_index: prompt_id -> sequential sample payload.
-        low_threshold: Low-IQR threshold (<=).
-        high_threshold: High-IQR threshold (>).
+        tail_percent: Percentile size used for low/high tails.
     """
     parallel_stats = parallel_labels_df.copy()
     parallel_stats["prompt_id"] = parallel_stats["prompt_id"].astype(str)
@@ -513,8 +509,12 @@ def _save_parallel_iqr_grouped_samples(
     sequential_stats = sequential_stats.set_index("prompt_id")
 
     prompt_order = [str(pid) for pid in parallel_labels_df["prompt_id"].tolist()]
-    low_prompt_ids = [pid for pid in prompt_order if float(parallel_stats.loc[pid, "iqr"]) <= low_threshold]
-    high_prompt_ids = [pid for pid in prompt_order if float(parallel_stats.loc[pid, "iqr"]) > high_threshold]
+    if not prompt_order:
+        return
+    tail_count = max(1, math.ceil(len(prompt_order) * (tail_percent / 100.0)))
+    tail_count = min(len(prompt_order), tail_count)
+    high_prompt_ids = prompt_order[:tail_count]
+    low_prompt_ids = prompt_order[-tail_count:]
 
     scenario_name = _path_component(str(sequential_row.get("scenario_name") or ""), "unknown_scenario")
     run_name = _path_component(str(sequential_row.get("run_name") or ""), "unknown_run")
@@ -534,8 +534,9 @@ def _save_parallel_iqr_grouped_samples(
         sequential_row=sequential_row,
         metric=metric,
         variant=variant,
-        low_threshold=low_threshold,
-        high_threshold=high_threshold,
+        tail_percent=tail_percent,
+        tail_count=tail_count,
+        total_prompts=len(prompt_order),
     )
     _write_grouped_samples_jsonl(
         out_path=high_path,
@@ -549,8 +550,9 @@ def _save_parallel_iqr_grouped_samples(
         sequential_row=sequential_row,
         metric=metric,
         variant=variant,
-        low_threshold=low_threshold,
-        high_threshold=high_threshold,
+        tail_percent=tail_percent,
+        tail_count=tail_count,
+        total_prompts=len(prompt_order),
     )
 
 
@@ -641,6 +643,7 @@ def _draw_quantile_iqr_panel(
             color=iqr_color_secondary,
         )
     ax2.set_ylabel("iqr")
+    ax2.set_ylim(0.0, 1.0)
     return ax2
 
 
@@ -1238,8 +1241,7 @@ def plot_parallel_vs_sequential(
     out_dir: Path | None = None,
     metrics: list[str] | None = None,
     variants: list[str] | None = None,
-    parallel_iqr_low_threshold: float = 0.01,
-    parallel_iqr_high_threshold: float = 0.2,
+    parallel_iqr_tail_percent: float = 5.0,
     max_groups: int | None = None,
     max_prompts_print: int = 20,
 ) -> int:
@@ -1251,8 +1253,7 @@ def plot_parallel_vs_sequential(
         out_dir: Output directory root for generated plots.
         metrics: Optional metric filter list.
         variants: Optional variant filter list.
-        parallel_iqr_low_threshold: Save grouped samples for parallel IQR <= this.
-        parallel_iqr_high_threshold: Save grouped samples for parallel IQR > this.
+        parallel_iqr_tail_percent: Percentile size used for low/high grouped samples.
         max_groups: Optional cap on printed groups.
         max_prompts_print: Max prompt rows printed per run+metric+variant (negative => all).
     """
@@ -1260,10 +1261,10 @@ def plot_parallel_vs_sequential(
         raise ValueError("score_df is required for parallel-vs-sequential plotting.")
     if out_dir is None:
         raise ValueError("out_dir is required for parallel-vs-sequential plotting.")
-    if parallel_iqr_high_threshold <= parallel_iqr_low_threshold:
+    if parallel_iqr_tail_percent <= 0.0 or parallel_iqr_tail_percent > 50.0:
         raise ValueError(
-            "parallel_iqr_high_threshold must be greater than parallel_iqr_low_threshold "
-            f"({parallel_iqr_high_threshold} <= {parallel_iqr_low_threshold})."
+            "parallel_iqr_tail_percent must be in (0, 50]. "
+            f"Got {parallel_iqr_tail_percent}."
         )
 
     matches = match_parallel_and_sequential_runs(runs_df, score_df=score_df)
@@ -1489,8 +1490,7 @@ def plot_parallel_vs_sequential(
                         seq_aligned_df=seq_aligned,
                         parallel_prompt_index=parallel_prompt_index,
                         sequential_prompt_index=seq_prompt_index,
-                        low_threshold=parallel_iqr_low_threshold,
-                        high_threshold=parallel_iqr_high_threshold,
+                        tail_percent=parallel_iqr_tail_percent,
                     )
 
     return saved
@@ -1515,8 +1515,7 @@ def main() -> None:
         out_dir=args.out_dir,
         metrics=metrics if metrics else None,
         variants=variants if variants else None,
-        parallel_iqr_low_threshold=args.parallel_iqr_low_threshold,
-        parallel_iqr_high_threshold=args.parallel_iqr_high_threshold,
+        parallel_iqr_tail_percent=args.parallel_iqr_tail_percent,
         max_groups=args.max_groups,
         max_prompts_print=args.max_prompts_print,
     )

@@ -141,17 +141,17 @@ def main() -> None:
 
     # Comment out entries in this list to disable specific plot families.
     plot_functions: list[tuple[str, Callable[[Path], int]]] = [
-        # (
-        #     "plot_run_turn_curve",
-        #     lambda out_dir: plot_run_turn_curves(
-        #         base_runs_df=base_runs_df,
-        #         score_df=score_df,
-        #         metrics=metrics,
-        #         variants=variants,
-        #         sweep_name=sweep_name,
-        #         out_dir=out_dir,
-        #     ),
-        # ),
+        (
+            "plot_run_turn_curve",
+            lambda out_dir: plot_run_turn_curves(
+                base_runs_df=base_runs_df,
+                score_df=score_df,
+                metrics=metrics,
+                variants=variants,
+                sweep_name=sweep_name,
+                out_dir=out_dir,
+            ),
+        ),
         (
             "plot_parallel_vs_sequential",
             lambda out_dir: plot_parallel_vs_sequential(
