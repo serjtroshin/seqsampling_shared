@@ -1,0 +1,11 @@
+# LlamaFactory defaults merged with runtime values from
+# active_mt_distill.sft.llamafactory_runner.
+stage: sft
+do_train: true
+do_eval: false
+overwrite_output_dir: true
+report_to: none
+logging_strategy: steps
+save_strategy: steps
+plot_loss: true
+

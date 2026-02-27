@@ -1,0 +1,15 @@
+base_data_folder: "/fnwi_fs/ivi/irlab/projects/ltl-mt/sampling_for_mt_data"
+cache_folder: "/fnwi_fs/ivi/irlab/projects/ltl-mt/sampling_for_mt_data/.cache"
+model_store_folder: "/fnwi_fs/ivi/irlab/projects/ltl-mt/sampling_for_mt_data/models"
+local_output_symlink_root: "synth_data/outputs"
+
+data:
+  processed_folder: "/fnwi_fs/ivi/irlab/projects/ltl-mt/sampling_for_mt_data/processed"
+  iterations_folder: "/fnwi_fs/ivi/irlab/projects/ltl-mt/sampling_for_mt_data/iterations"
+  log_folder: "/fnwi_fs/ivi/irlab/projects/ltl-mt/sampling_for_mt_data/logs"
+  hf_cache_dir: "/fnwi_fs/ivi/irlab/projects/ltl-mt/sampling_for_mt_data/.cache/hf"
+
+sft:
+  apptainer_image: "/fnwi_fs/ivi/irlab/projects/ltl-mt/sampling_for_mt_data/models/llamafactory_latest.sif"
+  cache_base: "/fnwi_fs/ivi/irlab/projects/ltl-mt/sampling_for_mt_data/.cache/llamafactory"
+  artifact_output_root: "/fnwi_fs/ivi/irlab/projects/ltl-mt/sampling_for_mt_data/models/sft_runs"

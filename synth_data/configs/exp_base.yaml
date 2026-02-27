@@ -1,0 +1,48 @@
+experiment_name: mt_active_distill_v0
+seed: 13
+
+base_data_folder: "/tmp/${oc.env:USER,user}/sampling_for_mt_data"
+cache_folder: "${base_data_folder}/.cache"
+model_store_folder: "${base_data_folder}/models"
+local_output_symlink_root: "synth_data/outputs"
+
+languages:
+  pairs:
+    - {src: "eng_Latn", tgt: "deu_Latn"}
+    - {src: "eng_Latn", tgt: "fra_Latn"}
+    - {src: "eng_Latn", tgt: "rus_Cyrl"}
+
+data:
+  processed_folder: "${base_data_folder}/processed"
+  iterations_folder: "${base_data_folder}/iterations"
+  log_folder: "${base_data_folder}/logs"
+  flores_devtest_path: "${data.processed_folder}/flores_devtest.jsonl"
+  opus_pool_path: "${data.processed_folder}/opus_train_pool.jsonl"
+  candidate_pool_path: "${data.processed_folder}/candidate_pool.jsonl"
+  opus_train_size_per_pair: 20000
+  candidate_pool_size_per_pair: 2000
+  hf_cache_dir: "${cache_folder}/hf"
+
+sft:
+  engine: "llamafactory_apptainer"
+  apptainer_image: "/path/to/llamafactory.sif"
+  apptainer_bin: "apptainer"
+  use_gpu: true
+  cleanenv: true
+  cache_base: "${cache_folder}/llamafactory"
+  artifact_output_root: "${model_store_folder}/sft_runs"
+  template_path: "synth_data/configs/llama_factory/sft_template.yaml"
+  dataset_name: "active_mt_train"
+  output_dir_name: "checkpoints"
+  finetuning_type: "lora"
+  lora_target: "all"
+  cutoff_len: 1024
+  per_device_train_batch_size: 2
+  gradient_accumulation_steps: 8
+  learning_rate: 2.0e-5
+  num_train_epochs: 1.0
+  logging_steps: 10
+  save_steps: 200
+  bf16: true
+  fp16: false
+  valid_ratio: 0.02
