@@ -12,14 +12,11 @@ runner:
     time: 2-00:00:00
     cpus_per_task: 2
     mem: 16G
-    exclude: ilps-cn116
     additional_args: []
 
 global_overrides:
   - "scenario=configs/mt/mt_multi_turn_please_translate_again.yaml"
   - "num_generations=5"
-  - "slurm_gen.exclude=ilps-cn116"
-  - "slurm_eval.exclude=ilps-cn116"
 
 sweeps:
   - ["tgt=de"]

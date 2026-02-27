@@ -1,4 +1,4 @@
-name: mt_multi_turn_plus_doc
+name: mt_greedy_doc
 base_config: pipelines/configs/wmt24p.yaml
 experiment_dir: outputs/mt/pipeline_runs
 
@@ -6,7 +6,7 @@ runner:
   max_running: 2
   poll_seconds: 30
   python_bin: .venv/bin/python
-  log_root: outputs/mt/sweeps/mt_multi_turn_plus_doc
+  log_root: outputs/mt/sweeps/mt_greedy_doc
   slurm:
     partition: cpu
     time: 2-00:00:00
@@ -17,6 +17,7 @@ runner:
 global_overrides:
   - "scenario=configs/mt/mt_multi_turn_please_translate_again.yaml"
   - "num_generations=5"
+  - "scenario_overrides=[temperature=0.0,top_p=1.0,top_k=1]"
 
 sweeps:
   - ["tgt=de", "prompts_path=data/processed/wmttest2024_plus_doc/en-de.jsonl"]

@@ -237,8 +237,18 @@ def build_seqsampling_client(scenario: Scenario) -> OpenAIClient:
     api_key = scenario.vllm_api_key or scenario.openai_api_key or "token"
     timeout = scenario.request_timeout or 3600.0
     base_url = scenario.vllm_base_url if scenario.backend == "vllm" else None
-    default_max_concurrent = 1 if scenario.sampling_mode == "parallel" else 16
-    max_concurrent = scenario.max_concurrent or default_max_concurrent
+    # Adapt request concurrency in parallel mode to keep total in-flight
+    # generations bounded while avoiding the n=1 throughput collapse.
+    target_inflight = max(1, scenario.target_inflight_generations)
+    if scenario.sampling_mode == "parallel":
+        default_max_concurrent = max(1, target_inflight // max(1, scenario.num_generations))
+    else:
+        default_max_concurrent = target_inflight
+    max_concurrent = (
+        scenario.max_concurrent
+        if scenario.max_concurrent is not None
+        else default_max_concurrent
+    )
 
     return ReasoningAwareOpenAIClient(
         model=scenario.model,

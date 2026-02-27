@@ -109,7 +109,17 @@ class Scenario(BaseModel):
         ge=1,
         description=(
             "Optional override for concurrent OpenAI-compatible requests. "
-            "Defaults to 1 for parallel mode and 16 for iterative/iterkpar/enumeration/multi_turn."
+            "If unset, concurrency is derived from target_inflight_generations "
+            "(parallel: floor(target_inflight_generations / num_generations), minimum 1; "
+            "other modes: target_inflight_generations)."
+        ),
+    )
+    target_inflight_generations: int = Field(
+        default=32,
+        ge=1,
+        description=(
+            "(batch size) Target total in-flight generations used to derive default request concurrency "
+            "when max_concurrent is unset."
         ),
     )
     # Logprob collection / likelihood scoring
