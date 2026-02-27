@@ -1,20 +1,13 @@
 from __future__ import annotations
 
+"""FLORES devtest loader that writes canonical frozen eval JSONL."""
+
 from pathlib import Path
+
+from datasets import load_dataset  # type: ignore[import-untyped]
 
 from active_mt_distill.datasets.schema import make_record
 from active_mt_distill.io import write_jsonl
-
-
-def _load_dataset_fn():
-    try:
-        from datasets import load_dataset  # type: ignore[import-untyped]
-    except ImportError as exc:  # pragma: no cover - dependency error path
-        raise RuntimeError(
-            "Missing optional dependency 'datasets'. "
-            "Install it first, for example: .venv/bin/uv pip install datasets"
-        ) from exc
-    return load_dataset
 
 
 def build_flores_devtest(
@@ -24,7 +17,7 @@ def build_flores_devtest(
     hf_cache_dir: str | None = None,
     limit_per_pair: int | None = None,
 ) -> int:
-    load_dataset = _load_dataset_fn()
+    # FLORES repository relies on remote dataset code, so this loader must opt in.
     dataset = load_dataset(
         "facebook/flores",
         "all",
@@ -39,6 +32,7 @@ def build_flores_devtest(
         tgt_field = f"sentence_{tgt_lang}"
         pair_count = 0
 
+        # Build a frozen per-pair eval set with deterministic ids.
         for row in dataset:
             src_text = str(row.get(src_field, "")).strip()
             tgt_text = str(row.get(tgt_field, "")).strip()

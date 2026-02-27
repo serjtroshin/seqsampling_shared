@@ -1,6 +1,13 @@
 from __future__ import annotations
 
+"""Language-code helpers shared across dataset preparation.
 
+FLORES uses 3-letter language prefixes in tags like `eng_Latn`.
+OPUS-100 configs use ISO-639-1 2-letter codes like `en-de`.
+"""
+
+
+# Mapping for FLORES -> OPUS lookup.
 _FLORES3_TO_ISO2 = {
     "eng": "en",
     "deu": "de",
@@ -54,6 +61,7 @@ _FLORES3_TO_ISO2 = {
     "zul": "zu",
 }
 
+# Human-readable language names used in prompts and exports.
 _FLORES3_TO_NAME = {
     "eng": "English",
     "deu": "German",
@@ -109,6 +117,7 @@ _FLORES3_TO_NAME = {
 
 
 def flores_to_iso2(lang_code: str) -> str:
+    """Convert a FLORES tag (e.g. eng_Latn) to ISO2 (e.g. en)."""
     prefix = lang_code.split("_", maxsplit=1)[0]
     mapped = _FLORES3_TO_ISO2.get(prefix)
     if mapped is None:
@@ -120,6 +129,6 @@ def flores_to_iso2(lang_code: str) -> str:
 
 
 def language_name(lang_code: str) -> str:
+    """Return a readable language name for a FLORES tag."""
     prefix = lang_code.split("_", maxsplit=1)[0]
     return _FLORES3_TO_NAME.get(prefix, lang_code)
-

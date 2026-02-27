@@ -1,5 +1,14 @@
 from __future__ import annotations
 
+"""CLI entrypoint for dataset preparation.
+
+Responsibilities:
+- resolve base + user config
+- set up symlinked local output folders
+- set writable Hugging Face cache env vars
+- run FLORES and/or OPUS builders
+"""
+
 import argparse
 import os
 from pathlib import Path
@@ -49,9 +58,11 @@ def _setup_storage_links(
     data_cfg: dict,
     repo_root: Path,
 ) -> None:
+    # External artifact roots (real files live here).
     base_data_folder = str(cfg.get("base_data_folder", "")).strip()
     cache_folder = str(cfg.get("cache_folder", "")).strip()
     model_store = str(cfg.get("model_store_folder", "")).strip()
+    # Local symlink root (developer-friendly in-repo paths).
     local_link_root = resolve_path(
         repo_root,
         str(cfg.get("local_output_symlink_root", "synth_data/outputs")),
@@ -97,6 +108,7 @@ def main() -> None:
     data_cfg = get_data_config(cfg)
     seed = int(cfg.get("seed", 13))
 
+    # Keep local output folders as symlinks to external storage roots.
     _setup_storage_links(cfg=cfg, data_cfg=data_cfg, repo_root=repo_root)
 
     hf_cache_dir = data_cfg.get("hf_cache_dir", None)

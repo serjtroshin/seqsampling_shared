@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Canonical dataset row schema used across prep, training, and evaluation."""
+
 from typing import Any
 
 
@@ -16,6 +18,7 @@ def make_record(
     strategy: str,
     parent_id: str | None = None,
 ) -> dict[str, Any]:
+    # Keep a single normalized row structure for all sources (flores/opus/synthetic).
     return {
         "id": record_id,
         "src_lang": src_lang,
@@ -30,4 +33,3 @@ def make_record(
             "parent_id": parent_id,
         },
     }
-

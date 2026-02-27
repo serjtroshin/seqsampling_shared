@@ -1,22 +1,15 @@
 from __future__ import annotations
 
+"""OPUS-100 pool builder for base-train and candidate splits."""
+
 from pathlib import Path
 from typing import Any
+
+from datasets import load_dataset  # type: ignore[import-untyped]
 
 from active_mt_distill.datasets.language_codes import flores_to_iso2
 from active_mt_distill.datasets.schema import make_record
 from active_mt_distill.io import write_jsonl
-
-
-def _load_dataset_fn():
-    try:
-        from datasets import load_dataset  # type: ignore[import-untyped]
-    except ImportError as exc:  # pragma: no cover - dependency error path
-        raise RuntimeError(
-            "Missing optional dependency 'datasets'. "
-            "Install it first, for example: .venv/bin/uv pip install datasets"
-        ) from exc
-    return load_dataset
 
 
 def _try_load_opus_split(
@@ -26,6 +19,7 @@ def _try_load_opus_split(
     tgt_iso2: str,
     hf_cache_dir: str | None,
 ):
+    # OPUS-100 may expose a pair as either src-tgt or tgt-src config name.
     attempts = [f"{src_iso2}-{tgt_iso2}", f"{tgt_iso2}-{src_iso2}"]
     errors: list[str] = []
 
@@ -44,6 +38,7 @@ def _try_load_opus_split(
 
 
 def _extract_parallel_text(row: dict[str, Any], src_iso2: str, tgt_iso2: str) -> tuple[str, str]:
+    # OPUS rows store text under row["translation"][lang_code].
     translation = row.get("translation", {})
     if not isinstance(translation, dict):
         return "", ""
@@ -62,8 +57,9 @@ def build_opus_pools(
     seed: int,
     hf_cache_dir: str | None = None,
 ) -> tuple[int, int]:
-    load_dataset = _load_dataset_fn()
-
+    # These lists become two disjoint pools:
+    # - train: used for SFT
+    # - candidate: reserved for active selection signals
     train_rows: list[dict[str, Any]] = []
     candidate_rows: list[dict[str, Any]] = []
 
@@ -91,6 +87,7 @@ def build_opus_pools(
             if not src_text or not tgt_text:
                 continue
 
+            # Fill training quota first.
             if n_train < needed_train:
                 record = make_record(
                     record_id=f"opus100:train:{src_lang}-{tgt_lang}:{n_train:06d}",
@@ -107,6 +104,7 @@ def build_opus_pools(
                 n_train += 1
                 continue
 
+            # Then fill candidate quota from the remaining shuffled rows.
             if n_candidate < needed_candidate:
                 record = make_record(
                     record_id=f"opus100:candidate:{src_lang}-{tgt_lang}:{n_candidate:06d}",
@@ -135,4 +133,3 @@ def build_opus_pools(
     train_count = write_jsonl(train_out_path, train_rows)
     candidate_count = write_jsonl(candidate_out_path, candidate_rows)
     return train_count, candidate_count
-
