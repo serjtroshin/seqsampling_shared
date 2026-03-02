@@ -40,7 +40,7 @@ class VLLMGenerationContext:
 def write_vllm_runtime_model_config(
     *, path: Path, model: str, vllm_server_args: list[str]
 ) -> Path:
-    """Write a temporary model config consumed by vLLM server runner."""
+    """Write a temporary model config consumed by the vLLM server runner."""
     payload = {
         "model": model,
         "vllm_server_args": [str(arg) for arg in vllm_server_args],
@@ -50,7 +50,7 @@ def write_vllm_runtime_model_config(
 
 
 def render_vllm_generation_lines(ctx: VLLMGenerationContext) -> list[str]:
-    """Render shell lines that lock, launch, monitor, and use a vLLM server."""
+    """Render shell lines that launch, monitor, and use a vLLM server."""
 
     runner_python = ctx.vllm_runner_python
     if "/" in runner_python and not Path(runner_python).is_absolute():
@@ -185,7 +185,6 @@ PY
         """
     ).strip()
 
-    # Keep existing behavior (runner emits a shell command string).
     vllm_cmd_build = (
         f"VLLM_CMD=$({runner_python_quoted}"
         f" {shlex.quote(str(ctx.vllm_runner_script_path))}"

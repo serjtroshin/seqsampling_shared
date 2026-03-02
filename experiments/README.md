@@ -21,6 +21,7 @@ This folder contains runnable experiment helpers for the standalone project.
 - FIFO order (no priorities).
 - bounded concurrency (`runner.max_running`).
 - status polling until each run is `DONE` or `FAILED`.
+- run folder naming that reflects the effective sampling config used by the sweep
 
 ### Config shape
 
@@ -48,6 +49,37 @@ sweeps:
   - ["model_config=configs/model_configs/qwen-3-4b-instruct-2507.yaml", "tgt=ru"]
   - ["model_config=configs/model_configs/qwen-3-4b-instruct-2507.yaml", "tgt=zh"]
 ```
+
+### Override precedence in sweeps
+
+For one sweep task, overrides are combined in this order:
+
+1. `global_overrides`
+2. the selected entry from `sweeps`
+3. any extra `--override ...` values passed to `sweep_runner.py`
+
+Then `pipelines/pipeline.py` resolves the scenario with this policy:
+
+1. base scenario YAML
+2. defaults from `model_config.scenario_override` / `model_config.scenario_overrides`
+3. pipeline-generated runtime overrides
+4. explicit `scenario_overrides`
+
+Practical rule:
+
+- Put reusable model-specific defaults in `configs/model_configs/*.yaml`.
+- Put experiment-specific sampling choices, such as greedy decoding, in `scenario_overrides`.
+- Explicit sweep `scenario_overrides` beat model-config defaults.
+
+Example:
+
+```yaml
+global_overrides:
+  - "model_config=configs/model_configs/qwen3-32b-instruct.yaml"
+  - "scenario_overrides=[temperature=0.0,top_p=1.0,top_k=1]"
+```
+
+Even if that model config sets `temperature: 0.7`, `top_p: 0.8`, `top_k: 20`, the effective run is greedy because the explicit sweep `scenario_overrides` win.
 
 ### Run locally
 

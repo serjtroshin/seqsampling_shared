@@ -215,8 +215,8 @@ class SingleScenarioPipeline:
                 )
             )
 
-        # Support explicit dotlist entries too, while keeping model-config entries
-        # as the final authority.
+        # Support explicit dotlist entries too. Model-config scenario overrides act
+        # as defaults and should not overwrite explicit pipeline/sweep overrides.
         raw_model_overrides = model_cfg.get("scenario_overrides")
         if raw_model_overrides is not None:
             if not isinstance(raw_model_overrides, list):
@@ -232,10 +232,10 @@ class SingleScenarioPipeline:
                 model_scenario_overrides.append(item)
 
         if model_scenario_overrides:
-            self.cfg.scenario_overrides = [
-                *(self.cfg.scenario_overrides or []),
-                *model_scenario_overrides,
-            ]
+            self.cfg.scenario_overrides = self._merge_default_scenario_overrides(
+                list(self.cfg.scenario_overrides or []),
+                model_scenario_overrides,
+            )
 
         ngpus = model_cfg.get("ngpus")
         if ngpus is not None:
@@ -264,6 +264,37 @@ class SingleScenarioPipeline:
         else:
             parts.append(str(ngpus))
         return ":".join(parts)
+
+    @staticmethod
+    def _scenario_override_key(override: str) -> str | None:
+        if "=" not in override:
+            return None
+        return override.split("=", 1)[0].strip() or None
+
+    @classmethod
+    def _scenario_override_conflicts(cls, lhs: str, rhs: str) -> bool:
+        lhs_key = cls._scenario_override_key(lhs)
+        rhs_key = cls._scenario_override_key(rhs)
+        if lhs_key is None or rhs_key is None:
+            return False
+        return (
+            lhs_key == rhs_key
+            or lhs_key.startswith(f"{rhs_key}.")
+            or rhs_key.startswith(f"{lhs_key}.")
+        )
+
+    @classmethod
+    def _merge_default_scenario_overrides(
+        cls,
+        explicit_overrides: list[str],
+        default_overrides: list[str],
+    ) -> list[str]:
+        merged = list(explicit_overrides)
+        for default in default_overrides:
+            if any(cls._scenario_override_conflicts(existing, default) for existing in merged):
+                continue
+            merged.append(default)
+        return merged
 
     @staticmethod
     def _override_value_to_dotlist(value: object, *, model_cfg_path: Path, key: str) -> str:

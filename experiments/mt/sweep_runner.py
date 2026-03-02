@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import functools
+import json
 import logging
 import re
 import shlex
@@ -180,6 +181,68 @@ def _load_yaml_cached(path_str: str):
         return None
 
 
+def _parse_dotlist_list(raw: str | None) -> list[str]:
+    if raw is None:
+        return []
+    try:
+        cfg = OmegaConf.from_dotlist([f"value={raw}"])
+    except Exception:  # noqa: BLE001
+        return []
+    value = OmegaConf.select(cfg, "value")
+    if value is None:
+        return []
+    if OmegaConf.is_list(value) or isinstance(value, (list, tuple)):
+        return [str(item) for item in value]
+    return [str(value)]
+
+
+def _serialize_dotlist_value(value: object) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value is None:
+        return "null"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, (list, dict)):
+        return json.dumps(value, separators=(",", ":"))
+    raise TypeError(f"Unsupported override value type: {type(value).__name__}")
+
+
+def _model_scenario_overrides(root: Path, overrides: list[str]) -> list[str]:
+    model_config = _extract_override(overrides, "model_config")
+    if not model_config:
+        return []
+
+    model_cfg_path = _resolve_path(root, model_config)
+    if not model_cfg_path.exists():
+        return []
+
+    model_cfg = _load_yaml_cached(str(model_cfg_path))
+    if model_cfg is None:
+        return []
+
+    merged: list[str] = []
+
+    raw_mapping = OmegaConf.select(model_cfg, "scenario_override")
+    if raw_mapping is not None:
+        mapping = OmegaConf.to_container(raw_mapping, resolve=True)
+        if isinstance(mapping, dict):
+            for override_key, override_value in mapping.items():
+                if not isinstance(override_key, str) or not override_key:
+                    continue
+                merged.append(f"{override_key}={_serialize_dotlist_value(override_value)}")
+
+    raw_list = OmegaConf.select(model_cfg, "scenario_overrides")
+    if raw_list is not None:
+        list_value = OmegaConf.to_container(raw_list, resolve=True)
+        if isinstance(list_value, list):
+            merged.extend(str(item) for item in list_value if isinstance(item, str) and "=" in item)
+
+    return merged
+
+
 def _scenario_param(root: Path, overrides: list[str], key: str) -> str | None:
     direct = _extract_override(overrides, key)
     if direct is not None:
@@ -195,7 +258,17 @@ def _scenario_param(root: Path, overrides: list[str], key: str) -> str | None:
     cfg = _load_yaml_cached(str(scenario_path))
     if cfg is None:
         return None
-    value = OmegaConf.select(cfg, key)
+
+    effective_cfg = cfg
+    model_overrides = _model_scenario_overrides(root, overrides)
+    if model_overrides:
+        effective_cfg = OmegaConf.merge(effective_cfg, OmegaConf.from_dotlist(model_overrides))
+
+    scenario_overrides = _parse_dotlist_list(_extract_override(overrides, "scenario_overrides"))
+    if scenario_overrides:
+        effective_cfg = OmegaConf.merge(effective_cfg, OmegaConf.from_dotlist(scenario_overrides))
+
+    value = OmegaConf.select(effective_cfg, key)
     if value is None:
         return None
     return str(value)

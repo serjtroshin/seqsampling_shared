@@ -108,6 +108,12 @@ python pipelines/pipeline.py \
 
 `qwen3-32b-instruct.yaml` sets `ngpus: 4` and `--tensor-parallel-size 4`, so generation is submitted with 4 GPUs.
 
+Override policy for model configs:
+
+- `model_config.scenario_override` and `model_config.scenario_overrides` provide default scenario values.
+- Explicit `scenario_overrides=...` passed via pipeline config, CLI, or sweep config override those defaults.
+- Base scenario YAML is the starting point; model-config defaults are layered on top; the pipeline also injects run-specific overrides such as resolved `prompts_path`, run-local `output_dir`, `dump_path`, and vLLM connection settings; explicit scenario overrides are final for normal experiment settings such as sampling parameters.
+
 
 # Running a pipeline via SLURM jobs (generation + evaluation) -- most convenient for sweeps
 
@@ -190,6 +196,8 @@ python pipelines/pipeline.py --config pipelines/configs/wmt24p.yaml \
   run_name=dryrun_sampling \
   scenario_overrides='["temperature=0.3","top_p=0.9"]'
 ```
+
+If you also pass `--model-config`, these explicit `scenario_overrides` win over any sampling defaults defined in the model config.
 
 Override number of prompts for a quick run:
 

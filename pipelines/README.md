@@ -105,7 +105,7 @@ python pipelines/pipeline.py \
 Base fields:
 - `scenario`: single scenario YAML to run
 - `tgt`: target language code (default `de`; source is always English)
-- `model_config`: optional path to `configs/model_configs/*.yaml`; pipeline reads `model:` from that file
+- `model_config`: optional path to `configs/model_configs/*.yaml`; pipeline reads `model:` from that file, plus optional default scenario overrides from `scenario_override` / `scenario_overrides`
 - `model`: optional model override
 - `prompts_path`: optional prompt input (file path or directory; if directory, pipeline resolves `en-<tgt>*.jsonl`; if multiple matches exist, pass an explicit file path)
 - `prompt_key`: prompt key when prompts are JSONL
@@ -137,6 +137,43 @@ Each SLURM block supports:
 - `additional_args` (extra raw `#SBATCH` lines)
 
 Use quotes for `time` values in YAML (for example `"2:00:00"`), so they are not parsed as integers.
+
+## Override Precedence
+
+Scenario values are resolved in this order:
+
+1. Base scenario YAML from `scenario=...`
+2. Model-config scenario defaults from `model_config.scenario_override` and `model_config.scenario_overrides`
+3. Pipeline-generated overrides such as `model`, `prompts_path`, `prompt_key`, `extra_data_fields`, `num_generations`, `max_tokens`, run-local `output_dir`, and vLLM connection settings
+4. Explicit `scenario_overrides` from the pipeline config, CLI dotlist, or sweep config
+
+Policy:
+
+- `model_config` sampling settings are defaults only.
+- Explicit `scenario_overrides` win over model-config defaults.
+- "Pipeline-generated overrides" means values the pipeline injects automatically for the concrete run, for example `output_dir=<run>/generation/<scenario>`, `dump_path=<run>/generation/<scenario>/scenario_resolved.yaml`, resolved `prompts_path=...`, and `vllm_base_url=http://<host>:<port>/v1`.
+- The pipeline also auto-fills language metadata when needed, for example `tgt=ru`, `src=en`, `src_lang_name=English`, `tgt_lang_name=Russian`.
+- Within one override list, later entries win over earlier ones in normal OmegaConf dotlist order.
+- If both a broad key and a nested key are present (for example `vllm_extra_body=...` and `vllm_extra_body.chat_template_kwargs=...`), treat the more explicit final entry as authoritative.
+
+Example:
+
+```yaml
+# configs/model_configs/qwen3-32b-instruct.yaml
+scenario_override:
+  temperature: 0.7
+  top_p: 0.8
+  top_k: 20
+```
+
+```bash
+python pipelines/pipeline.py \
+  --config pipelines/configs/wmt24p.yaml \
+  --model-config configs/model_configs/qwen3-32b-instruct.yaml \
+  'scenario_overrides=["temperature=0.0","top_p=1.0","top_k=1"]'
+```
+
+The effective sampling config is greedy: `temperature=0.0`, `top_p=1.0`, `top_k=1`.
 
 ## Output Layout
 
