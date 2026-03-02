@@ -20,11 +20,7 @@ def _build_report(
         )
     average = float(sum(scores) / len(scores)) if scores else float("nan")
     scored = [
-        {
-            "prompt_id": record.prompt_id,
-            "response_idx": record.response_idx,
-            "score": float(score),
-        }
+        _score_entry(record, score)
         for record, score in zip(records, scores)
     ]
     report = {
@@ -36,6 +32,20 @@ def _build_report(
     report.update(metric.report_metadata())
     metric.augment_report(report, records)
     return report
+
+
+def _score_entry(record: SampleRecord, score: float) -> dict[str, Any]:
+    item: dict[str, Any] = {
+        "prompt_id": record.prompt_id,
+        "score": float(score),
+    }
+    if record.parallel_idx is not None:
+        item["parallel_idx"] = record.parallel_idx
+    if record.sequential_idx is not None:
+        item["sequential_idx"] = record.sequential_idx
+    if "parallel_idx" not in item and "sequential_idx" not in item:
+        item["response_idx"] = record.response_idx
+    return item
 
 
 def _write_report(path: Path, report: dict[str, Any]) -> None:

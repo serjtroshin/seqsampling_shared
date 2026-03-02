@@ -10,6 +10,9 @@ It reuses the existing report shape (`n`, `average_score`, `scores`) and writes 
 - `.../parallel/evaluation/xcomet_xxl.json`
 - optional final-answer reports: `.../parallel/evaluation/comet_kiwi_qe.FA.json`
 
+New reports store per-score `parallel_idx` and `sequential_idx` directly when available.
+Legacy `response_idx`-only reports are still supported by the downstream plotting code.
+
 ## 1) Create separate environment
 
 ```bash

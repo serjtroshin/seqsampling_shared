@@ -10,9 +10,20 @@ from typing import Any, Iterable, Optional, Sequence
 class SampleRecord:
     prompt_id: Optional[str]
     response_idx: int
+    parallel_idx: Optional[int]
+    sequential_idx: Optional[int]
     src: str
     mt: str
     ref: Optional[str] = None
+
+
+def _safe_int(value: Any) -> Optional[int]:
+    try:
+        if value is None:
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _extract_source(row: dict[str, Any]) -> str:
@@ -53,6 +64,8 @@ def extract_records_with_ids(
             prompt_id = None if prompt_id_raw is None else str(prompt_id_raw)
             src = _extract_source(row)
             ref = _extract_reference(row)
+            parallel_ids = row.get("parallel_ids") if isinstance(row.get("parallel_ids"), list) else []
+            sequential_ids = row.get("sequential_ids") if isinstance(row.get("sequential_ids"), list) else []
             generations = _find_generations(row, generation_keys)
             if not generations:
                 continue
@@ -63,6 +76,8 @@ def extract_records_with_ids(
                     SampleRecord(
                         prompt_id=prompt_id,
                         response_idx=idx,
+                        parallel_idx=_safe_int(parallel_ids[idx]) if idx < len(parallel_ids) else None,
+                        sequential_idx=_safe_int(sequential_ids[idx]) if idx < len(sequential_ids) else None,
                         src=src,
                         mt=str(generation),
                         ref=ref,
