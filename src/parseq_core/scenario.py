@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
+
+from active_mt_distill.datasets.language_codes import flores_to_iso2, language_name
+
+from .prompt_payload import encode_prompt_payload
 
 
 class Prompt(BaseModel):
@@ -56,6 +61,15 @@ class Scenario(BaseModel):
     )
     first_turn_instruction: str | None = None
     reiteration_instruction: str | None = None
+    first_turn_response_instruction: str | None = None
+    reiteration_response_instruction: str | None = None
+    reiteration_include_input_text: bool = Field(
+        default=True,
+        description=(
+            "Whether multi-turn reiteration prompts should append the formatted input_text "
+            "after the reiteration instruction."
+        ),
+    )
     response_instruction: str | None = None
     dump_path: Path | None = None  # optional path to write resolved scenario YAML
     reuse_from: Path | None = None  # optional path to reuse parallel outputs
@@ -83,7 +97,7 @@ class Scenario(BaseModel):
         ge=1,
         description=(
             "Keep last k generations in history-style filenames "
-            "(iterative/iterkpar/enumeration/multi_turn); None keeps all for iterative prompts."
+            "(iterative/iterkpar/enumeration/multi_turn); None keeps the full available history."
         ),
     )
 
@@ -239,18 +253,24 @@ class Scenario(BaseModel):
                         or payload.get("text")
                         or payload.get("message")
                         or payload.get("source")
+                        or payload.get("src_text")
                     )
                 if text is None:
                     raise ValueError(
                         "Each JSONL line must include a prompt field. "
                         "Checked keys: "
-                        f"{[self.prompt_key] if self.prompt_key else ['prompt','text','message','source']}"
+                        f"{[self.prompt_key] if self.prompt_key else ['prompt','text','message','source','src_text']}"
                     )
                 pid = payload.get("id", str(idx))
                 extra_data = {
                     key: payload.get(key)
                     for key in self.extra_data_fields
                 } if self.extra_data_fields else {}
+                for key in ("src_lang", "tgt_lang"):
+                    if key in payload and key not in extra_data:
+                        extra_data[key] = payload.get(key)
+                if "tgt_text" in payload and "target" not in extra_data:
+                    extra_data["target"] = payload.get("tgt_text")
                 prompts.append(Prompt(id=str(pid), text=str(text), extra_data=extra_data))
             return self._maybe_limit_prompts(prompts)
 
@@ -262,10 +282,100 @@ class Scenario(BaseModel):
         prompts = [Prompt(id=str(idx), text=line) for idx, line in enumerate(lines)]
         return self._maybe_limit_prompts(prompts)
 
+    @staticmethod
+    def _normalize_template(template: str) -> str:
+        return re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", r"{\1}", template)
+
+    def _template_context(self, prompt: Prompt) -> dict[str, Any]:
+        context: dict[str, Any] = {
+            "prompt": prompt.text,
+            "src": self.src,
+            "tgt": self.tgt,
+            "src_lang_name": self.src_lang_name,
+            "tgt_lang_name": self.tgt_lang_name,
+            **prompt.extra_data,
+        }
+
+        src_lang = prompt.extra_data.get("src_lang")
+        tgt_lang = prompt.extra_data.get("tgt_lang")
+
+        if isinstance(src_lang, str) and src_lang.strip():
+            context["src_lang"] = src_lang
+            context["src_lang_name"] = language_name(src_lang)
+            try:
+                context["src"] = flores_to_iso2(src_lang)
+            except KeyError:
+                context["src"] = src_lang.split("_", maxsplit=1)[0].lower()
+
+        if isinstance(tgt_lang, str) and tgt_lang.strip():
+            context["tgt_lang"] = tgt_lang
+            context["tgt_lang_name"] = language_name(tgt_lang)
+            try:
+                context["tgt"] = flores_to_iso2(tgt_lang)
+            except KeyError:
+                context["tgt"] = tgt_lang.split("_", maxsplit=1)[0].lower()
+
+        return context
+
+    def _render_template(self, template: str | None, prompt: Prompt) -> str | None:
+        if template is None:
+            return None
+
+        class _SafeDict(dict[str, Any]):
+            def __missing__(self, key: str) -> str:
+                return "{" + key + "}"
+
+        normalized = self._normalize_template(template)
+        return normalized.format_map(_SafeDict(self._template_context(prompt)))
+
     def format_prompt(self, prompt: Prompt) -> str:
         if self.prompt_template:
-            return self.prompt_template.format(prompt=prompt.text)
+            rendered = self._render_template(self.prompt_template, prompt)
+            if rendered is not None:
+                return rendered
         return prompt.text
+
+    def render_system_prompt(self, prompt: Prompt) -> str | None:
+        return self._render_template(self.system_prompt, prompt)
+
+    def render_first_turn_instruction(self, prompt: Prompt) -> str | None:
+        return self._render_template(self.first_turn_instruction, prompt)
+
+    def render_reiteration_instruction(self, prompt: Prompt) -> str | None:
+        return self._render_template(self.reiteration_instruction, prompt)
+
+    def render_first_turn_response_instruction(self, prompt: Prompt) -> str | None:
+        if self.first_turn_response_instruction is not None:
+            return self._render_template(self.first_turn_response_instruction, prompt)
+        if self.response_instruction is not None:
+            return self._render_template(self.response_instruction, prompt)
+        return None
+
+    def render_reiteration_response_instruction(self, prompt: Prompt) -> str | None:
+        if self.reiteration_response_instruction is not None:
+            return self._render_template(self.reiteration_response_instruction, prompt)
+        if self.response_instruction is not None:
+            return self._render_template(self.response_instruction, prompt)
+        return None
+
+    def render_response_instruction(self, prompt: Prompt) -> str | None:
+        return self._render_template(self.response_instruction, prompt)
+
+    def render_previous_solutions_text(self, prompt: Prompt) -> str | None:
+        return self._render_template(self.previous_solutions_text, prompt)
+
+    def build_sampler_input(self, prompt: Prompt) -> str:
+        payload = {
+            "input_text": self.format_prompt(prompt),
+            "system_instruction": self.render_system_prompt(prompt),
+            "first_turn_text": self.render_first_turn_instruction(prompt),
+            "reiteration_instruction": self.render_reiteration_instruction(prompt),
+            "first_turn_response_instruction": self.render_first_turn_response_instruction(prompt),
+            "reiteration_response_instruction": self.render_reiteration_response_instruction(prompt),
+            "response_instruction": self.render_response_instruction(prompt),
+            "previous_solutions_text": self.render_previous_solutions_text(prompt),
+        }
+        return encode_prompt_payload(payload)
 
     # Convenience flags
     def is_iterative(self) -> bool:

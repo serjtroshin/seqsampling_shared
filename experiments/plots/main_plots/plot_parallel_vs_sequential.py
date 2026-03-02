@@ -803,6 +803,93 @@ def _sample_turn_text_map(sample_payload: dict[str, Any]) -> dict[int, str]:
     return out
 
 
+def _build_turn_pair_diff_binned_dataframe(
+    *,
+    diag_df: pd.DataFrame,
+    sequential_prompt_index: dict[str, dict[str, Any]],
+    quality_col: str,
+    start_turn_id: int,
+    end_turn_id: int,
+    n_bins: int = 10,
+) -> pd.DataFrame:
+    """Bin start-turn quality and estimate string-change probability for a turn pair.
+
+    Args:
+        diag_df: Prompt-level diagnostics with prompt_id and the chosen quality column.
+        sequential_prompt_index: prompt_id -> prompt sample payload for sequential run.
+        quality_col: Column in diag_df used for binning.
+        start_turn_id: Start turn id used to compare strings.
+        end_turn_id: End turn id used to compare strings.
+        n_bins: Number of quantile bins.
+    """
+    if diag_df.empty or not sequential_prompt_index or quality_col not in diag_df.columns:
+        return pd.DataFrame()
+
+    quality_map = (
+        diag_df.assign(prompt_id=diag_df["prompt_id"].astype(str))
+        .set_index("prompt_id")[quality_col]
+        .astype(float)
+        .to_dict()
+    )
+
+    rows: list[dict[str, Any]] = []
+    for prompt_id, prompt_payload in sequential_prompt_index.items():
+        if prompt_id not in quality_map:
+            continue
+        turn_map = _sample_turn_text_map(prompt_payload)
+        if start_turn_id not in turn_map or end_turn_id not in turn_map:
+            continue
+        start_text = turn_map[start_turn_id].strip()
+        end_text = turn_map[end_turn_id].strip()
+        rows.append(
+            {
+                "prompt_id": str(prompt_id),
+                "base_quality": float(quality_map[prompt_id]),
+                "changed": 1.0 if end_text != start_text else 0.0,
+            }
+        )
+
+    diff_df = pd.DataFrame(rows)
+    if diff_df.empty:
+        return pd.DataFrame()
+
+    unique_quality = int(diff_df["base_quality"].nunique())
+    if unique_quality <= 1:
+        return pd.DataFrame(
+            [
+                {
+                    "bin_center": float(diff_df["base_quality"].iloc[0]),
+                    "prob_diff": float(diff_df["changed"].mean()),
+                    "count": int(len(diff_df)),
+                    "bin_label": "all",
+                }
+            ]
+        )
+
+    bins = max(2, min(int(n_bins), unique_quality))
+    diff_df["bin"] = pd.qcut(
+        diff_df["base_quality"],
+        q=bins,
+        duplicates="drop",
+    )
+    grouped = (
+        diff_df.dropna(subset=["bin"])
+        .groupby("bin", as_index=False, observed=False)
+        .agg(
+            prob_diff=("changed", "mean"),
+            count=("changed", "size"),
+        )
+    )
+    if grouped.empty:
+        return pd.DataFrame()
+
+    grouped["bin_center"] = grouped["bin"].apply(
+        lambda interval: float((interval.left + interval.right) / 2.0)
+    )
+    grouped["bin_label"] = grouped["bin"].astype(str)
+    return grouped.sort_values("bin_center").reset_index(drop=True)
+
+
 def _build_turn01_diff_binned_dataframe(
     *,
     diag_df: pd.DataFrame,
@@ -816,73 +903,14 @@ def _build_turn01_diff_binned_dataframe(
         sequential_prompt_index: prompt_id -> prompt sample payload for sequential run.
         n_bins: Number of bins for turn0 quality.
     """
-    if diag_df.empty or not sequential_prompt_index:
-        return pd.DataFrame()
-
-    turn0_quality_map = (
-        diag_df.assign(prompt_id=diag_df["prompt_id"].astype(str))
-        .set_index("prompt_id")["turn0_quality"]
-        .astype(float)
-        .to_dict()
+    return _build_turn_pair_diff_binned_dataframe(
+        diag_df=diag_df,
+        sequential_prompt_index=sequential_prompt_index,
+        quality_col="turn0_quality",
+        start_turn_id=0,
+        end_turn_id=1,
+        n_bins=n_bins,
     )
-
-    rows: list[dict[str, Any]] = []
-    for prompt_id, prompt_payload in sequential_prompt_index.items():
-        if prompt_id not in turn0_quality_map:
-            continue
-        turn_map = _sample_turn_text_map(prompt_payload)
-        if 0 not in turn_map or 1 not in turn_map:
-            continue
-        t0 = turn_map[0].strip()
-        t1 = turn_map[1].strip()
-        rows.append(
-            {
-                "prompt_id": str(prompt_id),
-                "turn0_quality": float(turn0_quality_map[prompt_id]),
-                "turn1_diff_from_turn0": 1.0 if t1 != t0 else 0.0,
-            }
-        )
-
-    diff_df = pd.DataFrame(rows)
-    if diff_df.empty:
-        return pd.DataFrame()
-
-    unique_turn0 = int(diff_df["turn0_quality"].nunique())
-    if unique_turn0 <= 1:
-        return pd.DataFrame(
-            [
-                {
-                    "bin_center": float(diff_df["turn0_quality"].iloc[0]),
-                    "prob_diff": float(diff_df["turn1_diff_from_turn0"].mean()),
-                    "count": int(len(diff_df)),
-                    "bin_label": "all",
-                }
-            ]
-        )
-
-    bins = max(2, min(int(n_bins), unique_turn0))
-    # Use quantile bins so each bin has roughly equal number of prompts.
-    diff_df["bin"] = pd.qcut(
-        diff_df["turn0_quality"],
-        q=bins,
-        duplicates="drop",
-    )
-    grouped = (
-        diff_df.dropna(subset=["bin"])
-        .groupby("bin", as_index=False, observed=False)
-        .agg(
-            prob_diff=("turn1_diff_from_turn0", "mean"),
-            count=("turn1_diff_from_turn0", "size"),
-        )
-    )
-    if grouped.empty:
-        return pd.DataFrame()
-
-    grouped["bin_center"] = grouped["bin"].apply(
-        lambda interval: float((interval.left + interval.right) / 2.0)
-    )
-    grouped["bin_label"] = grouped["bin"].astype(str)
-    return grouped.sort_values("bin_center").reset_index(drop=True)
 
 
 def _plot_sequential_prompt_stats_subplots(
@@ -900,7 +928,7 @@ def _plot_sequential_prompt_stats_subplots(
     iqr_label_secondary: str,
     baseline_median_values: list[float],
 ) -> None:
-    """Create 6-row sequential diagnostic plot with turn-delta scatter panels.
+    """Create 7-row sequential diagnostic plot with turn-delta scatter panels.
 
     Args:
         seq_aligned_df: Sequential q1/median/q3/iqr aligned to parallel prompt order.
@@ -929,9 +957,17 @@ def _plot_sequential_prompt_stats_subplots(
         sequential_prompt_index=sequential_prompt_index,
         n_bins=10,
     )
+    turn23_diff_binned_df = _build_turn_pair_diff_binned_dataframe(
+        diag_df=diag_df,
+        sequential_prompt_index=sequential_prompt_index,
+        quality_col="turn1_quality",
+        start_turn_id=1,
+        end_turn_id=2,
+        n_bins=10,
+    )
 
     fig_w = max(9.0, min(18.0, 0.03 * len(seq_aligned_df) + 8.0))
-    fig, axes = plt.subplots(6, 1, figsize=(fig_w, 25.2))
+    fig, axes = plt.subplots(7, 1, figsize=(fig_w, 29.2))
 
     ax1 = axes[0]
     ax1_twin = _draw_quantile_iqr_panel(
@@ -1074,6 +1110,33 @@ def _plot_sequential_prompt_stats_subplots(
             "binned probability of turn1 string differing from turn0 string"
         )
         ax6.grid(alpha=0.25, linewidth=0.7)
+
+    ax7 = axes[6]
+    if turn23_diff_binned_df.empty:
+        ax7.text(
+            0.5,
+            0.5,
+            "no turn2/turn3 string pairs for bin probability plot",
+            ha="center",
+            va="center",
+        )
+        ax7.set_axis_off()
+    else:
+        ax7.plot(
+            turn23_diff_binned_df["bin_center"],
+            turn23_diff_binned_df["prob_diff"],
+            marker="o",
+            linewidth=1.2,
+            markersize=4.0,
+            color="#2c7fb8",
+        )
+        ax7.set_ylim(-0.02, 1.02)
+        ax7.set_xlabel("sequential quality (turn2) bin center")
+        ax7.set_ylabel("P(turn3 output != turn2 output)")
+        ax7.set_title(
+            "binned probability of turn3 string differing from turn2 string"
+        )
+        ax7.grid(alpha=0.25, linewidth=0.7)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()

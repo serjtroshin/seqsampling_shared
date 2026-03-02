@@ -8,6 +8,12 @@ from typing import Any
 import pandas as pd
 import yaml
 
+from experiments.plots.index_compat import (
+    build_response_to_turn_map,
+    build_turn_parallel_to_response_map,
+    resolve_score_item_indices,
+)
+
 FATAL_PATTERNS = [
     re.compile(pattern, flags=re.IGNORECASE)
     for pattern in [
@@ -306,20 +312,6 @@ def _fallback_model_name(root_dir: Path, run_dir: Path) -> str | None:
     return None
 
 
-def _fallback_sequential_id(response_idx: int, scenario_meta: dict[str, Any]) -> int:
-    """Fallback mapping from response index to sequential_id.
-
-    Args:
-        response_idx: Zero-based response index in the sample list.
-        scenario_meta: Scenario metadata dict used to detect parallel mode.
-    """
-    sampling_mode = str(scenario_meta.get("sampling_mode", "")).strip().lower()
-    scenario_name = str(scenario_meta.get("name", "")).strip().lower()
-    if sampling_mode == "parallel" or "parallel" in scenario_name:
-        return 0
-    return response_idx
-
-
 def _resolve_sample_file(report: dict[str, Any], run_dir: Path) -> Path | None:
     """Resolve source sample JSONL file for a metric report.
 
@@ -346,40 +338,16 @@ def _response_to_turn_map(
     sample_file: Path,
     scenario_meta: dict[str, Any],
 ) -> dict[tuple[str, int], int]:
-    """Build (prompt_id, response_idx) -> sequential_id map from sample records.
+    """Build (prompt_id, response_idx) -> sequential_id map from sample records."""
+    return build_response_to_turn_map(_load_jsonl_records(sample_file), scenario_meta)
 
-    Args:
-        sample_file: JSONL file with generation/sample records.
-        scenario_meta: Scenario metadata used for fallback turn ids.
-    """
-    turn_by_key: dict[tuple[str, int], int] = {}
-    rows = _load_jsonl_records(sample_file)
-    for row in rows:
-        prompt_id = str(row.get("prompt_id", "unknown"))
 
-        sequential_ids = row.get("sequential_ids")
-        if not isinstance(sequential_ids, list):
-            sequential_ids = []
-
-        candidate_outputs = row.get("solutions")
-        if not isinstance(candidate_outputs, list):
-            candidate_outputs = row.get("generations")
-        if not isinstance(candidate_outputs, list):
-            candidate_outputs = row.get("raw_generations")
-        if not isinstance(candidate_outputs, list):
-            candidate_outputs = []
-
-        row_count = max(len(sequential_ids), len(candidate_outputs))
-        for response_idx in range(row_count):
-            sequential_id = (
-                _safe_int(sequential_ids[response_idx])
-                if response_idx < len(sequential_ids)
-                else None
-            )
-            if sequential_id is None:
-                sequential_id = _fallback_sequential_id(response_idx, scenario_meta)
-            turn_by_key[(prompt_id, response_idx)] = sequential_id
-    return turn_by_key
+def _turn_parallel_to_response_map(
+    sample_file: Path,
+    scenario_meta: dict[str, Any],
+) -> dict[tuple[str, int, int], int]:
+    """Build (prompt_id, parallel_idx, sequential_id) -> response_idx map."""
+    return build_turn_parallel_to_response_map(_load_jsonl_records(sample_file), scenario_meta)
 
 
 def load_all_finished_dataframes(
@@ -460,6 +428,7 @@ def load_all_finished_dataframes(
             )
 
         sample_cache: dict[Path, dict[tuple[str, int], int]] = {}
+        response_cache: dict[Path, dict[tuple[str, int, int], int]] = {}
         for metric in metrics:
             report_file_raw = metric.get("report_file")
             if not isinstance(report_file_raw, str):
@@ -476,6 +445,7 @@ def load_all_finished_dataframes(
 
             sample_file = _resolve_sample_file(report, run_dir)
             turn_map: dict[tuple[str, int], int] = {}
+            response_map: dict[tuple[str, int, int], int] = {}
             if sample_file is not None:
                 if sample_file not in sample_cache:
                     try:
@@ -485,26 +455,38 @@ def load_all_finished_dataframes(
                     except (OSError, json.JSONDecodeError):
                         sample_cache[sample_file] = {}
                 turn_map = sample_cache[sample_file]
+                if sample_file not in response_cache:
+                    try:
+                        response_cache[sample_file] = _turn_parallel_to_response_map(
+                            sample_file, scenario_meta
+                        )
+                    except (OSError, json.JSONDecodeError):
+                        response_cache[sample_file] = {}
+                response_map = response_cache[sample_file]
 
             for score_item in scores:
-                prompt_id = str(score_item.get("prompt_id", "unknown"))
-                response_idx = _safe_int(score_item.get("response_idx"))
                 quality = _safe_float(score_item.get("score"))
-                if response_idx is None or quality is None:
+                if quality is None:
                     continue
 
-                sequential_id = turn_map.get((prompt_id, response_idx))
-                if sequential_id is None:
-                    sequential_id = _fallback_sequential_id(response_idx, scenario_meta)
+                resolved = resolve_score_item_indices(
+                    score_item,
+                    turn_map=turn_map,
+                    response_map=response_map,
+                    scenario_meta=scenario_meta,
+                )
+                if resolved is None:
+                    continue
 
                 score_rows.append(
                     {
                         **base,
                         "metric": metric["metric"],
                         "variant": metric["variant"],
-                        "prompt_id": prompt_id,
-                        "response_idx": response_idx,
-                        "sequential_id": sequential_id,
+                        "prompt_id": resolved.prompt_id,
+                        "response_idx": resolved.response_idx,
+                        "parallel_idx": resolved.parallel_idx,
+                        "sequential_id": resolved.sequential_id,
                         "quality": quality,
                         "report_file": report_file_raw,
                         "sample_file": str(sample_file) if sample_file is not None else None,

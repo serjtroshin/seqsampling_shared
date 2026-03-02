@@ -20,8 +20,19 @@ from seqsampling.sampling.iteration import (
 )
 
 from .scenario import Prompt, Scenario
+from .prompt_payload import decode_prompt_payload
 
 PromptContextLike = PromptContext | IterationPromptContext
+
+
+def _payload_or_attr(
+    payload: dict[str, Any],
+    payload_key: str,
+    attr_value: str | None,
+) -> str:
+    if payload_key in payload and payload[payload_key] is not None:
+        return str(payload[payload_key])
+    return str(attr_value or "")
 
 
 class BasePromptSchema(ABC):
@@ -69,24 +80,29 @@ class PreviousSolutionsPlainPromptSchema(BasePromptSchema):
     response_instruction: str | None = None
 
     def build_messages(self, ctx: IterationPromptContext, turn_id: int = 0) -> List[ChatMessage]:
+        payload = decode_prompt_payload(ctx.input_text) or {}
+        input_text = str(payload.get("input_text", ctx.input_text))
+        system_instruction = str(payload.get("system_instruction") or self.system_instruction)
+        previous_template = str(payload.get("previous_solutions_text") or self.previous_solutions_text or "")
+        response_instruction = _payload_or_attr(
+            payload,
+            "reiteration_response_instruction",
+            payload.get("response_instruction") if payload.get("response_instruction") is not None else self.response_instruction,
+        )
         previous = (
-            self.previous_solutions_text.format(previous=str(ctx.previous_solutions))
-            if self.previous_solutions_text
+            previous_template.format(previous=str(ctx.previous_solutions))
+            if previous_template
             else f"Previously sampled outputs: {ctx.previous_solutions}"
         )
-        instruction = (
-            self.response_instruction
-            or "Provide one new response as plain text (no JSON, no lists)."
-        )
+        user_lines: list[str] = []
+        if response_instruction:
+            user_lines.append(response_instruction)
+        user_lines.extend([previous, "", input_text])
         return [
-            ChatMessage(role="system", content=self.system_instruction),
+            ChatMessage(role="system", content=system_instruction),
             ChatMessage(
                 role="user",
-                content=(
-                    f"{instruction}\n"
-                    f"{previous}\n\n"
-                    f"{ctx.input_text}"
-                ),
+                content="\n".join(user_lines),
             ),
         ]
 
@@ -100,19 +116,26 @@ class FirstTurnPlainPromptSchema(BasePromptSchema):
     response_instruction: str | None = None
 
     def build_messages(self, ctx: PromptContextLike, turn_id: int = 0) -> List[ChatMessage]:
-        instruction = (
-            self.response_instruction
-            or "Provide one new response as plain text (no JSON, no lists)."
+        payload = decode_prompt_payload(ctx.input_text) or {}
+        input_text = str(payload.get("input_text", ctx.input_text))
+        system_instruction = str(payload.get("system_instruction") or self.system_instruction)
+        response_instruction = _payload_or_attr(
+            payload,
+            "first_turn_response_instruction",
+            payload.get("response_instruction") if payload.get("response_instruction") is not None else self.response_instruction,
         )
+        first_turn_text = str(payload.get("first_turn_text") or self.first_turn_text or "")
+        user_lines: list[str] = []
+        if response_instruction:
+            user_lines.append(response_instruction)
+        if first_turn_text:
+            user_lines.append(first_turn_text)
+        user_lines.extend(["", input_text])
         return [
-            ChatMessage(role="system", content=self.system_instruction),
+            ChatMessage(role="system", content=system_instruction),
             ChatMessage(
                 role="user",
-                content=(
-                    f"{instruction}\n"
-                    f"{self.first_turn_text or ''}\n\n"
-                    f"{ctx.input_text}"
-                ),
+                content="\n".join(user_lines),
             ),
         ]
 

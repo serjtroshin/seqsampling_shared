@@ -12,9 +12,11 @@ from seqsampling.sampling.enumeration import EnumerationSampler
 from seqsampling.sampling.sampler import SequentialSamplingResult
 
 from .scenario import Scenario
+from .prompt_payload import decode_prompt_payload
 from .sampling import (
     BasePromptSchema,
     RemoveThinkingParser,
+    _payload_or_attr,
     build_constrained_config,
     build_sampling_config,
     build_seqsampling_client,
@@ -32,11 +34,20 @@ class EnumerationPromptSchema(BasePromptSchema):
     final_answer_field_name: str = "final_answer"
 
     def build_messages(self, ctx: PromptContext, turn_id: int = 0) -> List[ChatMessage]:
-        instruction = (
-            self.response_instruction
-            or "Provide diverse outputs while preserving meaning."
+        payload = decode_prompt_payload(ctx.input_text) or {}
+        input_text = str(payload.get("input_text", ctx.input_text))
+        system_instruction = str(payload.get("system_instruction") or self.system_instruction)
+        response_instruction = _payload_or_attr(
+            payload,
+            "first_turn_response_instruction",
+            payload.get("response_instruction") if payload.get("response_instruction") is not None else self.response_instruction,
         )
-        task_instruction = self.first_turn_instruction or ""
+        first_turn_instruction = str(payload.get("first_turn_text") or self.first_turn_instruction or "")
+        user_lines: list[str] = []
+        if response_instruction:
+            user_lines.append(response_instruction)
+        if first_turn_instruction:
+            user_lines.append(first_turn_instruction)
         if self.include_final_answer:
             example_json = (
                 f'{{"{self.field_name}": ["candidate 1", "candidate 2"], '
@@ -55,15 +66,18 @@ class EnumerationPromptSchema(BasePromptSchema):
             )
 
         return [
-            ChatMessage(role="system", content=self.system_instruction),
+            ChatMessage(role="system", content=system_instruction),
             ChatMessage(
                 role="user",
-                content=(
-                    f"{instruction}\n"
-                    f"{task_instruction}\n\n"
-                    f"{output_format}\n"
-                    f"Example JSON: {example_json}\n\n"
-                    f"Task input:\n{ctx.input_text}"
+                content="\n".join(
+                    user_lines
+                    + [
+                        "",
+                        output_format,
+                        f"Example JSON: {example_json}",
+                        "",
+                        f"Task input:\n{input_text}",
+                    ]
                 ),
             ),
         ]
@@ -228,8 +242,11 @@ def build_enumeration_prompt_schema(scenario: Scenario) -> EnumerationPromptSche
     return EnumerationPromptSchema(
         system_instruction=scenario.system_prompt or "You are a helpful assistant.",
         first_turn_instruction=scenario.first_turn_instruction,
-        response_instruction=scenario.response_instruction
-        or "Produce multiple diverse outputs in one response.",
+        response_instruction=(
+            scenario.first_turn_response_instruction
+            if scenario.first_turn_response_instruction is not None
+            else scenario.response_instruction
+        ),
         field_name=scenario.enumeration_field_name,
         include_final_answer=scenario.enumeration_include_final_answer,
         final_answer_field_name=scenario.enumeration_final_answer_field_name,
@@ -263,7 +280,7 @@ def run_enumeration_scenario(
     scenario = Scenario.load(scenario_path, overrides=overrides)
     _maybe_dump_resolved_config(scenario)
     prompts = scenario.load_prompts()
-    formatted_prompts = [scenario.format_prompt(p) for p in prompts]
+    formatted_prompts = [scenario.build_sampler_input(p) for p in prompts]
 
     if draft_prompt:
         if not formatted_prompts:

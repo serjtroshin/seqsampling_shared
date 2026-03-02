@@ -244,14 +244,20 @@ def build_iterative_prompt_schema(scenario: Scenario) -> BasePromptSchema:
     first_turn_prompt_schema = FirstTurnPlainPromptSchema(
         system_instruction=scenario.system_prompt or "You are a helpful assistant.",
         first_turn_text=scenario.first_turn_instruction,
-        response_instruction=scenario.response_instruction
-        or "Provide exactly one concise output as plain text",
+        response_instruction=(
+            scenario.first_turn_response_instruction
+            if scenario.first_turn_response_instruction is not None
+            else scenario.response_instruction
+        ),
     )
     reiteration_turn_prompt_schema = PreviousSolutionsPlainPromptSchema(
         system_instruction=scenario.system_prompt or "You are a helpful assistant.",
         previous_solutions_text=scenario.previous_solutions_text,
-        response_instruction=scenario.response_instruction
-        or "Provide exactly one concise output as plain text",
+        response_instruction=(
+            scenario.reiteration_response_instruction
+            if scenario.reiteration_response_instruction is not None
+            else scenario.response_instruction
+        ),
     )
     return ConditionalPromptSchema(
         first_turn_prompt_schema=first_turn_prompt_schema,
@@ -293,7 +299,7 @@ def run_iterative_scenario(
     _maybe_dump_resolved_config(scenario)
     prompts = scenario.load_prompts()
 
-    formatted_prompts = [scenario.format_prompt(p) for p in prompts]
+    formatted_prompts = [scenario.build_sampler_input(p) for p in prompts]
     sampler = build_iterative_sampler(scenario)
     outputs = sampler.run(formatted_prompts, draft_prompt=draft_prompt)
 

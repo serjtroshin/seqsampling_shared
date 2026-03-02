@@ -30,8 +30,11 @@ def load_parallel_prompts(scenario: Scenario) -> Dict[str, str]:
 def build_parallel_prompt_schema(scenario: Scenario) -> BasePromptSchema:
     return PlainParallelPromptSchema(
         system_instruction=scenario.system_prompt or "You are a helpful assistant.",
-        response_instruction=scenario.response_instruction
-        or "Provide exactly one concise output as plain text",
+        response_instruction=(
+            scenario.first_turn_response_instruction
+            if scenario.first_turn_response_instruction is not None
+            else scenario.response_instruction
+        ),
         first_turn_instruction=scenario.first_turn_instruction,
     )
 
@@ -51,7 +54,7 @@ def build_parallel_sampler(scenario: Scenario) -> ParallelSampler:
 
 def run_parallel_scenario(scenario: Scenario, draft_prompt: bool = False) -> Path:
     prompts = scenario.load_prompts()
-    formatted_prompts = [scenario.format_prompt(p) for p in prompts]
+    formatted_prompts = [scenario.build_sampler_input(p) for p in prompts]
 
     if draft_prompt:
         if not formatted_prompts:

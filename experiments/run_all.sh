@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT}"
 
 MODEL_CONFIG="configs/model_configs/qwen3-32b-instruct.yaml"
-EXPERIMENT_DIR="clear_run_27feb"
+EXPERIMENT_DIR="clear_run_2mar"
 EXPERIMENT_DIR_ARGS=()
 if [[ -n "${EXPERIMENT_DIR}" ]]; then
   EXPERIMENT_DIR_ARGS=(--experiment-dir "${EXPERIMENT_DIR}")

@@ -1,4 +1,4 @@
-name: mt_multi_turn_please_translate_again
+name: mt_multi_turn_please_translate_again_for_a_better
 backend: vllm
 sampling_mode: multi_turn
 model: meta-llama/Llama-3.1-8B-Instruct
@@ -10,13 +10,14 @@ prompts_path: ../../data/mt_from_en.txt
 output_dir: ../../outputs/mt/en-de/multi_turn_please_translate_again/
 output_filename: samples.jsonl
 prompt_template: "{src_lang_name}: {prompt}"
-system_prompt: You are a helpful assistant.
+system_prompt: "You are a professional translator. Your will be ask to conduct translation-related tasks. Output ONLY the transaltion segment - do NOT generate additional content. Do not include any <think> tags. Do not show your reasoning."
 prompt_field_name: output
 prompt_example_json: ""
 first_turn_instruction: "Translate the following text from {src_lang_name} to {tgt_lang_name}."
-reiteration_instruction: "Please again translate the following text from {src_lang_name} to {tgt_lang_name}."
+reiteration_instruction: "Please translate again for a better version."
+reiteration_include_input_text: false
 first_turn_response_instruction: "Provide only one translation and do not output anything else after that."
-reiteration_response_instruction: "Provide only one translation and do not output anything else after that."
+reiteration_response_instruction: ""
 max_tokens: 500
 temperature: 0.9
 top_p: 0.95

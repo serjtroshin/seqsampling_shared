@@ -15,7 +15,7 @@ runner:
     additional_args: []
 
 global_overrides:
-  - "scenario=configs/mt/mt_multi_turn_please_translate_again.yaml"
+  - "scenario=configs/mt/mt_multi_turn_please_translate_again_for_a_better.yaml"
   - "num_generations=5"
 
 sweeps:

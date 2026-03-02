@@ -8,11 +8,13 @@ from seqsampling.models.base import ChatMessage
 from seqsampling.sampling.iteration import IterationPromptContext, IterationSampler, SequentialSamplingResult
 
 from .scenario import Scenario
+from .prompt_payload import decode_prompt_payload
 from .sampling import (
     BasePromptSchema,
     FirstTurnPlainPromptSchema,
     PlainTextParser,
     RemoveThinkingParser,
+    _payload_or_attr,
     build_sampling_config,
     build_seqsampling_client,
     write_samples_jsonl,
@@ -27,14 +29,19 @@ class ConversationTurn:
 
 @dataclass
 class ConversationHistory:
-    """Keeps the last k (user, assistant) turns, or all if k is None."""
+    """Keeps system prompt separate from the last k user/assistant turns."""
 
     k: int | None = None
+    system_message: str | None = None
     items: list[ConversationTurn] | None = None
 
     def __post_init__(self) -> None:
         if self.items is None:
             self.items = []
+
+    def set_system_message(self, system_message: str | None) -> None:
+        if self.system_message is None and system_message:
+            self.system_message = system_message
 
     def add(self, user: str, assistant: str) -> None:
         self.items.append(ConversationTurn(user=user, assistant=assistant))
@@ -51,6 +58,7 @@ class ConversationHistory:
 
 @dataclass
 class MultiTurnPromptContext(IterationPromptContext):
+    system_message: str | None = None
     history_messages: list[ChatMessage] | None = None
 
 
@@ -67,24 +75,33 @@ class ReiterationMultiTurnPromptSchema(FirstTurnPlainPromptSchema):
     """
 
     reiteration_instruction: str | None = None
+    include_input_text: bool = True
 
     def build_messages(self, ctx: MultiTurnPromptContext, turn_id: int = 0) -> List[ChatMessage]:
-        history_messages = list(ctx.history_messages or [])
-        instruction = (
-            self.response_instruction
-            or "Provide one new response as plain text (no JSON, no lists)."
+        payload = decode_prompt_payload(ctx.input_text) or {}
+        input_text = str(payload.get("input_text", ctx.input_text))
+        response_instruction = _payload_or_attr(
+            payload,
+            "reiteration_response_instruction",
+            payload.get("response_instruction") if payload.get("response_instruction") is not None else self.response_instruction,
         )
-        reiteration_text = self.reiteration_instruction or self.first_turn_text or ""
+        first_turn_text = str(payload.get("first_turn_text") or self.first_turn_text or "")
+        reiteration_instruction = str(
+            payload.get("reiteration_instruction") or self.reiteration_instruction or first_turn_text
+        )
+        history_messages = list(ctx.history_messages or [])
+        user_lines: list[str] = []
+        if response_instruction:
+            user_lines.append(response_instruction)
+        if reiteration_instruction:
+            user_lines.append(reiteration_instruction)
+        if self.include_input_text:
+            user_lines.extend(["", input_text])
         return [
-            ChatMessage(role="system", content=self.system_instruction),
             *history_messages,
             ChatMessage(
                 role="user",
-                content=(
-                    f"{instruction}\n"
-                    f"{reiteration_text}\n\n"
-                    f"{ctx.input_text}"
-                ),
+                content="\n".join(user_lines),
             ),
         ]
 
@@ -126,6 +143,7 @@ class HistoryMultiTurnSampler(IterationSampler):
                         input_text=inp,
                         k=self.sampling_config.k,
                         previous_solutions=[],
+                        system_message=histories[i].system_message,
                         history_messages=histories[i].as_messages(),
                     ),
                     turn_id=turn_id,
@@ -164,6 +182,12 @@ class HistoryMultiTurnSampler(IterationSampler):
                 ) from exc
 
             for input_id, gens in enumerate(batched_gens):
+                if turn_id == 0:
+                    system_message = next(
+                        (m.content for m in message_batches[input_id] if m.role == "system"),
+                        None,
+                    )
+                    histories[input_id].set_system_message(system_message)
                 user_message = next(
                     (m.content for m in reversed(message_batches[input_id]) if m.role == "user"),
                     "",
@@ -202,15 +226,22 @@ def build_multi_turn_prompt_schema(scenario: Scenario) -> MultiTurnConditionalPr
     first_turn_prompt_schema = FirstTurnMultiTurnPromptSchema(
         system_instruction=scenario.system_prompt or "You are a helpful assistant.",
         first_turn_text=scenario.first_turn_instruction,
-        response_instruction=scenario.response_instruction
-        or "Provide exactly one concise output as plain text",
+        response_instruction=(
+            scenario.first_turn_response_instruction
+            if scenario.first_turn_response_instruction is not None
+            else scenario.response_instruction
+        ),
     )
     reiteration_turn_prompt_schema = ReiterationMultiTurnPromptSchema(
         system_instruction=scenario.system_prompt or "You are a helpful assistant.",
         first_turn_text=scenario.first_turn_instruction,
         reiteration_instruction=scenario.reiteration_instruction,
-        response_instruction=scenario.response_instruction
-        or "Provide exactly one concise output as plain text",
+        include_input_text=scenario.reiteration_include_input_text,
+        response_instruction=(
+            scenario.reiteration_response_instruction
+            if scenario.reiteration_response_instruction is not None
+            else scenario.response_instruction
+        ),
     )
     return MultiTurnConditionalPromptSchema(
         first_turn_prompt_schema=first_turn_prompt_schema,
@@ -241,7 +272,7 @@ def run_multi_turn_scenario(
     _maybe_dump_resolved_config(scenario)
     prompts = scenario.load_prompts()
 
-    formatted_prompts = [scenario.format_prompt(p) for p in prompts]
+    formatted_prompts = [scenario.build_sampler_input(p) for p in prompts]
     sampler = build_multi_turn_sampler(scenario)
     outputs = sampler.run(formatted_prompts, draft_prompt=draft_prompt)
 

@@ -15,7 +15,7 @@ top_p: 0.95
 top_k: 5
 num_generations: 3
 n_parallel: 1
-history_k: 1
+history_k: null
 constrained_gen:
   json_schema_strict: true
 vllm_base_url: http://localhost:8000/v1

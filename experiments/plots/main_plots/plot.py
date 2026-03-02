@@ -7,6 +7,7 @@ from typing import Callable
 import pandas as pd
 
 try:
+    from experiments.plots.main_plots.plot_greedy import plot_greedy
     from experiments.plots.main_plots.plot_parallel_vs_sequential import (
         plot_parallel_vs_sequential,
     )
@@ -16,6 +17,7 @@ try:
         parse_multi_args,
     )
 except ModuleNotFoundError:
+    from plot_greedy import plot_greedy
     from plot_parallel_vs_sequential import plot_parallel_vs_sequential
     from plot_run_turn_curve import plot_run_turn_curves
     from utils import load_all_finished_dataframes, parse_multi_args
@@ -160,6 +162,16 @@ def main() -> None:
                 out_dir=out_dir,
                 metrics=metrics,
                 variants=variants,
+            ),
+        ),
+        (
+            "plot_greedy",
+            lambda out_dir: plot_greedy(
+                base_runs_df=base_runs_df,
+                score_df=score_df,
+                metrics=metrics,
+                variants=variants,
+                out_root=out_dir,
             ),
         ),
         # ("plot_other", lambda out_dir: plot_other(..., out_dir=out_dir)),

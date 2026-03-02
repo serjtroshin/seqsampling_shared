@@ -10,11 +10,13 @@ from .scenario import Scenario
 from .iterative import run_iterative_scenario
 from .multi_turn import run_multi_turn_scenario
 from .parallel import run_parallel_scenario
+from .prompt_trace import maybe_dump_prompt_trace
 
 
 def run_scenario(scenario_path: Path, overrides: list[str] | None = None, draft_prompt: bool = False) -> Path:
     scenario = Scenario.load(scenario_path, overrides=overrides)
     _maybe_dump_resolved_config(scenario)
+    _maybe_dump_resolved_prompt_trace(scenario)
     if scenario.is_multi_turn():
         return run_multi_turn_scenario(scenario_path, overrides=overrides, draft_prompt=draft_prompt)
     if scenario.is_iterative() or scenario.is_iterkpar():
@@ -47,6 +49,10 @@ def _maybe_dump_resolved_config(scenario: Scenario) -> None:
     else:  # fallback
         import json
         scenario.dump_path.write_text(json.dumps(scenario.model_dump(), indent=2, default=str), encoding="utf-8")
+
+
+def _maybe_dump_resolved_prompt_trace(scenario: Scenario) -> None:
+    maybe_dump_prompt_trace(scenario)
 
 
 def _maybe_reuse_parallel(scenario: Scenario) -> Path | None:
