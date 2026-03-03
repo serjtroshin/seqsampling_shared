@@ -18,10 +18,6 @@ reiteration_instruction: "Please translate again for a better version."
 reiteration_include_input_text: false
 first_turn_response_instruction: "Provide only one translation and do not output anything else after that."
 reiteration_response_instruction: ""
-max_tokens: 500
-temperature: 0.9
-top_p: 0.95
-top_k: 5
 num_generations: 5
 n_parallel: 1
 history_k: null

@@ -17,10 +17,6 @@ first_turn_instruction: "Translate the following text from {src_lang_name} to {t
 reiteration_instruction: "Please again translate the following text from {src_lang_name} to {tgt_lang_name}."
 first_turn_response_instruction: "Provide only one translation and do not output anything else after that."
 reiteration_response_instruction: "Provide only one translation and do not output anything else after that."
-max_tokens: 500
-temperature: 0.9
-top_p: 0.95
-top_k: 5
 num_generations: 5
 n_parallel: 1
 history_k: null
