@@ -1,4 +1,4 @@
-name: mt_multi_turn_plus_doc
+name: mt_multi_turn_doc
 base_config: pipelines/configs/wmt24p.yaml
 experiment_dir: outputs/mt/pipeline_runs
 
@@ -6,7 +6,7 @@ runner:
   max_running: 2
   poll_seconds: 30
   python_bin: .venv/bin/python
-  log_root: outputs/mt/sweeps/mt_multi_turn_plus_doc
+  log_root: outputs/mt/sweeps/mt_multi_turn_doc
   slurm:
     partition: cpu
     time: 2-00:00:00
