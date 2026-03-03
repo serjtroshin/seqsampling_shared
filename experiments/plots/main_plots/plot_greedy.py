@@ -40,7 +40,7 @@ except ModuleNotFoundError:
 
 
 DEFAULT_RUNS_DIR = Path("outputs/mt/all_finished_runs/qwen3-32b-instruct/temp_0.0.p1.0.k1")
-DEFAULT_OUT_ROOT = Path("outputs/mt/all_finished_runs__plots/plot_greedy")
+DEFAULT_OUT_ROOT = Path("outputs/mt/all_finished_runs__plots/multiturn_plot")
 GRID_DATASET_TAGS = ["wmt24pp_doc", "wmt24pp_par"]
 GRID_LANG = "ru"
 GRID_SCENARIOS = [
@@ -954,7 +954,7 @@ def _plot_dataset_best_worst(
     return True
 
 
-def plot_greedy(
+def plot_multiturn(
     *,
     base_runs_df: pd.DataFrame,
     score_df: pd.DataFrame,
@@ -1098,19 +1098,19 @@ def plot_greedy(
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Greedy multi-turn plots over all finished greedy runs.",
+        description="Multi-turn plots over all finished runs.",
     )
     parser.add_argument(
         "--runs-dir",
         type=Path,
         default=DEFAULT_RUNS_DIR,
-        help="Root directory with finished greedy runs.",
+        help="Root directory with finished multi-turn runs.",
     )
     parser.add_argument(
         "--out-root",
         type=Path,
         default=DEFAULT_OUT_ROOT,
-        help="Output root for greedy plots.",
+        help="Output root for multi-turn plots.",
     )
     parser.add_argument(
         "--metric",
@@ -1157,7 +1157,7 @@ def main() -> None:
     if not variants:
         variants = sorted(score_df["variant"].dropna().astype(str).unique().tolist())
 
-    saved = plot_greedy(
+    saved = plot_multiturn(
         base_runs_df=base_runs_df,
         score_df=score_df,
         metrics=metrics,
@@ -1165,8 +1165,8 @@ def main() -> None:
         out_root=args.out_root,
     )
     if saved == 0:
-        raise ValueError("No greedy plots were generated.")
-    print(f"plot_job_done: plot_greedy saved={saved}")
+        raise ValueError("No multi-turn plots were generated.")
+    print(f"plot_job_done: multiturn_plot saved={saved}")
 
 
 if __name__ == "__main__":

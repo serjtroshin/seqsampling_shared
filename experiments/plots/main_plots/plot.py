@@ -9,7 +9,7 @@ from pathlib import Path
 import pandas as pd
 
 try:
-    from experiments.plots.main_plots.plot_greedy import plot_greedy
+    from experiments.plots.main_plots.plot_greedy import plot_multiturn
     from experiments.plots.main_plots.plot_parallel_vs_sequential import (
         plot_parallel_vs_sequential,
     )
@@ -19,7 +19,7 @@ try:
         parse_multi_args,
     )
 except ModuleNotFoundError:
-    from plot_greedy import plot_greedy
+    from plot_greedy import plot_multiturn
     from plot_parallel_vs_sequential import plot_parallel_vs_sequential
     from plot_run_turn_curve import plot_run_turn_curves
     from utils import load_all_finished_dataframes, parse_multi_args
@@ -123,6 +123,132 @@ def _resolve_metric_variant_filters(
     return metrics, variants
 
 
+def _build_multiturn_plot_job(
+    *,
+    runs_df: pd.DataFrame,
+    base_runs_df: pd.DataFrame,
+    score_df: pd.DataFrame,
+    runs_dir: Path,
+    out_root: Path,
+    metrics: tuple[str, ...],
+    variants: tuple[str, ...],
+) -> PlotJob | None:
+    """Build one multi-turn plot job for a concrete model/sampling-profile group.
+
+    Multi-turn outputs mirror the input folder layout under all_finished_runs__plots,
+    for example <out_root>/<model_name>/temp_0.7.p0.8.k20.
+    """
+    sweep_coords = _resolve_multiturn_sweep_coords(runs_df)
+    if sweep_coords is None:
+        return None
+    model_name, sampling_profile = sweep_coords
+
+    multiturn_out_root = out_root / model_name / sampling_profile
+
+    return PlotJob(
+        plot_name="multiturn_plot",
+        out_dir=multiturn_out_root,
+        base_runs_df=base_runs_df,
+        score_df=score_df,
+        metrics=metrics,
+        variants=variants,
+    )
+
+
+def _resolve_multiturn_sweep_coords(runs_df: pd.DataFrame) -> tuple[str, str] | None:
+    """Resolve model-config slug and sampling profile for one concrete sweep.
+
+    Prefer the directory layout under outputs/mt/all_finished_runs/<model>/<sampling>,
+    because runs_df["model"] may contain the resolved Hugging Face model name.
+    """
+    source_root = Path("outputs/mt/all_finished_runs").resolve()
+    path_pairs: set[tuple[str, str]] = set()
+
+    run_dirs = runs_df.get("run_dir")
+    if run_dirs is not None:
+        for raw_run_dir in run_dirs.dropna().astype(str).tolist():
+            if not raw_run_dir:
+                continue
+            try:
+                rel_parts = Path(raw_run_dir).resolve().relative_to(source_root).parts
+            except ValueError:
+                continue
+            if len(rel_parts) >= 2 and rel_parts[0] and rel_parts[1]:
+                path_pairs.add((str(rel_parts[0]), str(rel_parts[1])))
+
+    if len(path_pairs) == 1:
+        return next(iter(path_pairs))
+    if len(path_pairs) > 1:
+        return None
+
+    model_names = sorted(
+        {
+            str(value)
+            for value in runs_df["model"].dropna().astype(str).tolist()
+            if str(value)
+        }
+    )
+    sampling_profiles = sorted(
+        {
+            str(value)
+            for value in runs_df["sampling_profile"].dropna().astype(str).tolist()
+            if str(value)
+        }
+    )
+    if len(model_names) != 1 or len(sampling_profiles) != 1:
+        return None
+    return model_names[0], sampling_profiles[0]
+
+
+def _build_multiturn_plot_jobs(
+    *,
+    runs_df: pd.DataFrame,
+    base_runs_df: pd.DataFrame,
+    score_df: pd.DataFrame,
+    out_root: Path,
+    metrics: tuple[str, ...],
+    variants: tuple[str, ...],
+) -> list[PlotJob]:
+    """Build one multi-turn plot job per concrete model/sampling-profile sweep."""
+    valid_runs = runs_df[
+        runs_df["sampling_profile"].notna()
+        & runs_df["run_name"].notna()
+    ].copy()
+    if valid_runs.empty:
+        return []
+
+    plot_jobs: list[PlotJob] = []
+    grouped_runs: dict[tuple[str, str], pd.DataFrame] = {}
+    for _, row in valid_runs.iterrows():
+        sweep_coords = _resolve_multiturn_sweep_coords(pd.DataFrame([row]))
+        if sweep_coords is None:
+            continue
+        grouped_runs.setdefault(sweep_coords, []).append(row)
+
+    for sweep_coords in sorted(grouped_runs):
+        group_df = pd.DataFrame(grouped_runs[sweep_coords]).copy()
+        run_names = group_df["run_name"].astype(str).drop_duplicates().tolist()
+        if not run_names:
+            continue
+        group_base_runs_df = base_runs_df[base_runs_df["run_name"].isin(run_names)].copy()
+        group_score_df = score_df[score_df["run_name"].isin(run_names)].copy()
+        if group_base_runs_df.empty or group_score_df.empty:
+            continue
+        plot_job = _build_multiturn_plot_job(
+            runs_df=group_df,
+            base_runs_df=group_base_runs_df,
+            score_df=group_score_df,
+            runs_dir=out_root,
+            out_root=out_root,
+            metrics=metrics,
+            variants=variants,
+        )
+        if plot_job is not None:
+            plot_jobs.append(plot_job)
+
+    return plot_jobs
+
+
 def _run_plot_job(job: PlotJob) -> tuple[str, int]:
     """Execute one plot job in a worker process."""
     if job.plot_name == "plot_run_turn_curve":
@@ -146,10 +272,10 @@ def _run_plot_job(job: PlotJob) -> tuple[str, int]:
             metrics=list(job.metrics),
             variants=list(job.variants),
         )
-    elif job.plot_name == "plot_greedy":
+    elif job.plot_name == "multiturn_plot":
         if job.base_runs_df is None or job.score_df is None:
-            raise ValueError("plot_greedy job is missing required inputs.")
-        saved = plot_greedy(
+            raise ValueError("multiturn_plot job is missing required inputs.")
+        saved = plot_multiturn(
             base_runs_df=job.base_runs_df,
             score_df=job.score_df,
             metrics=list(job.metrics),
@@ -238,7 +364,8 @@ def main() -> None:
         ]
     )
 
-    # Comment out entries in this list to disable specific plot families.
+    # Keep the default main run focused on always-on summaries.
+    # plot_parallel_vs_sequential stays available as a standalone script if needed.
     plot_jobs: list[PlotJob] = [
         PlotJob(
             plot_name="plot_run_turn_curve",
@@ -249,24 +376,18 @@ def main() -> None:
             variants=variant_tuple,
             sweep_name=sweep_name,
         ),
-        PlotJob(
-            plot_name="plot_parallel_vs_sequential",
-            out_dir=args.out_root / "plot_parallel_vs_sequential",
-            runs_df=runs_df,
-            score_df=score_df,
-            metrics=metric_tuple,
-            variants=variant_tuple,
-        ),
-        PlotJob(
-            plot_name="plot_greedy",
-            out_dir=args.out_root / "plot_greedy",
-            base_runs_df=base_runs_df,
-            score_df=score_df,
-            metrics=metric_tuple,
-            variants=variant_tuple,
-        ),
         # PlotJob(plot_name="plot_other", out_dir=args.out_root / "plot_other", ...),
     ]
+    plot_jobs.extend(
+        _build_multiturn_plot_jobs(
+            runs_df=runs_df,
+            base_runs_df=base_runs_df,
+            score_df=score_df,
+            out_root=args.out_root,
+            metrics=metric_tuple,
+            variants=variant_tuple,
+        )
+    )
 
     total_saved = _run_plot_jobs(plot_jobs, max_workers=args.max_workers)
     if total_saved == 0:
