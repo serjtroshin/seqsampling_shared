@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
+from itertools import cycle
 from pathlib import Path
 
 # Avoid matplotlib cache permission issues on shared systems.
@@ -39,6 +41,19 @@ except ModuleNotFoundError:
 
 DEFAULT_RUNS_DIR = Path("outputs/mt/all_finished_runs/qwen3-32b-instruct/temp_0.0.p1.0.k1")
 DEFAULT_OUT_ROOT = Path("outputs/mt/all_finished_runs__plots/plot_greedy")
+GRID_DATASET_TAGS = ["wmt24pp_doc", "wmt24pp_par"]
+GRID_LANG = "ru"
+GRID_SCENARIOS = [
+    "mt_multi_turn_please_translate_again",
+    "mt_multi_turn_please_translate_again_for_a_better",
+    "mt_multi_turn_please_translate_again_for_a_better_deside_if_change",
+]
+GRID_COLUMNS = [
+    ("0->1", "binned_prob_of_change"),
+    ("1->2", "binned_prob_of_change_from_2_to_3_turn"),
+    ("2->3", "binned_prob_of_change_from_3_to_4_turn"),
+    ("3->4", "binned_prob_of_change_from_4_to_5_turn"),
+]
 
 
 def _path_component(value: str, fallback: str) -> str:
@@ -67,11 +82,18 @@ def _select_latest_runs(base_runs_df: pd.DataFrame) -> pd.DataFrame:
     return selected.sort_values(["dataset_tag", "tgt", "run_index"]).reset_index(drop=True)
 
 
-def _aggregated_out_path(out_root: Path, dataset_tag: str, metric: str, variant: str) -> Path:
+def _aggregated_out_path(
+    out_root: Path,
+    dataset_tag: str,
+    scenario_name: str,
+    metric: str,
+    variant: str,
+) -> Path:
+    scenario = _path_component(scenario_name, "unknown_scenario")
     metric_name = _path_component(metric, "metric")
     if variant != "default":
         metric_name = f"{metric_name}__{_path_component(variant, 'variant')}"
-    return out_root / dataset_tag / f"reranker_best_worst__{metric_name}.png"
+    return out_root / dataset_tag / scenario / f"reranker_best_worst__{metric_name}.png"
 
 
 def _turn_curve_out_path(
@@ -104,11 +126,14 @@ def _binned_prob_out_path(
     return out_root / "binned_prob_of_change" / dataset_tag / lang / scenario / f"{metric_name}.png"
 
 
-def _binned_prob_23_out_path(
+def _binned_prob_turn_pair_out_path(
     out_root: Path,
     run_row: pd.Series,
     metric: str,
     variant: str,
+    *,
+    start_turn_id: int,
+    end_turn_id: int,
 ) -> Path:
     dataset_tag = _path_component(str(run_row.get("dataset_tag") or ""), "unknown_dataset")
     lang = _path_component(str(run_row.get("tgt") or run_row.get("lp") or ""), "unknown_lang")
@@ -118,12 +143,78 @@ def _binned_prob_23_out_path(
         metric_name = f"{metric_name}__{_path_component(variant, 'variant')}"
     return (
         out_root
-        / "binned_prob_of_change_from_2_to_3_turn"
+        / f"binned_prob_of_change_from_{start_turn_id + 1}_to_{end_turn_id + 1}_turn"
         / dataset_tag
         / lang
         / scenario
         / f"{metric_name}.png"
     )
+
+
+def _probability_of_change_grid_out_path(
+    out_root: Path,
+    dataset_tag: str,
+    lang: str,
+    metric: str,
+    variant: str,
+) -> Path:
+    metric_name = _path_component(metric, "metric")
+    if variant != "default":
+        metric_name = f"{metric_name}__{_path_component(variant, 'variant')}"
+    return out_root / f"probability_of_change_grid__{dataset_tag}__{lang}__{metric_name}.png"
+
+
+def _probability_of_change_bar_out_path(
+    out_root: Path,
+    dataset_tag: str,
+    lang: str,
+    metric: str,
+    variant: str,
+) -> Path:
+    metric_name = _path_component(metric, "metric")
+    if variant != "default":
+        metric_name = f"{metric_name}__{_path_component(variant, 'variant')}"
+    return out_root / f"probability_of_change_bars__{dataset_tag}__{lang}__{metric_name}.png"
+
+
+def _turn_curve_bar_out_path(
+    out_root: Path,
+    dataset_tag: str,
+    lang: str,
+    metric: str,
+    variant: str,
+) -> Path:
+    metric_name = _path_component(metric, "metric")
+    if variant != "default":
+        metric_name = f"{metric_name}__{_path_component(variant, 'variant')}"
+    return out_root / f"turn_curve_bars__{dataset_tag}__{lang}__{metric_name}.png"
+
+
+def _probability_of_change_source_path(
+    out_root: Path,
+    *,
+    dataset_tag: str,
+    lang: str,
+    scenario_name: str,
+    metric: str,
+    variant: str,
+    source_dir: str,
+) -> Path:
+    metric_name = _path_component(metric, "metric")
+    if variant != "default":
+        metric_name = f"{metric_name}__{_path_component(variant, 'variant')}"
+    return (
+        out_root
+        / source_dir
+        / _path_component(dataset_tag, "unknown_dataset")
+        / _path_component(lang, "unknown_lang")
+        / _path_component(scenario_name, "unknown_scenario")
+        / f"{metric_name}.png"
+    )
+
+
+def _probability_of_change_json_path(plot_path: Path) -> Path:
+    return plot_path.with_suffix(".json")
 
 
 def _build_greedy_turn_pair_diag_dataframe(
@@ -165,13 +256,12 @@ def _build_greedy_turn_pair_diag_dataframe(
     return diag_df.dropna(subset=["start_turn_quality", "end_turn_quality"]).reset_index(drop=True)
 
 
-def _build_turn_pair_diff_binned_dataframe(
+def _build_turn_pair_change_dataframe(
     *,
     diag_df: pd.DataFrame,
     prompt_index: dict[str, dict[str, object]],
     start_turn_id: int,
     end_turn_id: int,
-    n_bins: int = 10,
 ) -> pd.DataFrame:
     if diag_df.empty or not prompt_index:
         return pd.DataFrame()
@@ -200,7 +290,23 @@ def _build_turn_pair_diff_binned_dataframe(
             }
         )
 
-    diff_df = pd.DataFrame(rows)
+    return pd.DataFrame(rows)
+
+
+def _build_turn_pair_diff_binned_dataframe(
+    *,
+    diag_df: pd.DataFrame,
+    prompt_index: dict[str, dict[str, object]],
+    start_turn_id: int,
+    end_turn_id: int,
+    n_bins: int = 10,
+) -> pd.DataFrame:
+    diff_df = _build_turn_pair_change_dataframe(
+        diag_df=diag_df,
+        prompt_index=prompt_index,
+        start_turn_id=start_turn_id,
+        end_turn_id=end_turn_id,
+    )
     if diff_df.empty:
         return pd.DataFrame()
 
@@ -239,6 +345,59 @@ def _build_turn_pair_diff_binned_dataframe(
     )
     grouped["bin_label"] = grouped["bin"].astype(str)
     return grouped.sort_values("bin_center").reset_index(drop=True)
+
+
+def _save_turn_pair_change_summary(
+    *,
+    run_row: pd.Series,
+    run_score_df: pd.DataFrame,
+    metric: str,
+    variant: str,
+    out_path: Path,
+    start_turn_id: int,
+    end_turn_id: int,
+) -> bool:
+    sample_file = _sample_file_from_score_rows(run_score_df)
+    if sample_file is None or not sample_file.exists():
+        return False
+
+    diag_df = _build_greedy_turn_pair_diag_dataframe(
+        run_score_df,
+        start_turn_id=start_turn_id,
+        end_turn_id=end_turn_id,
+    )
+    if diag_df.empty:
+        return False
+
+    prompt_index = _build_prompt_sample_index(sample_file)
+    change_df = _build_turn_pair_change_dataframe(
+        diag_df=diag_df,
+        prompt_index=prompt_index,
+        start_turn_id=start_turn_id,
+        end_turn_id=end_turn_id,
+    )
+    if change_df.empty:
+        return False
+
+    changed_count = int(change_df["changed"].sum())
+    total_count = int(len(change_df))
+    payload = {
+        "dataset_tag": str(run_row.get("dataset_tag") or "unknown_dataset"),
+        "lang": str(run_row.get("tgt") or run_row.get("lp") or "unknown_lang"),
+        "scenario_name": str(run_row.get("scenario_name") or "unknown_scenario"),
+        "metric": metric,
+        "variant": variant,
+        "turn_transition": f"{start_turn_id}->{end_turn_id}",
+        "start_turn_id": start_turn_id,
+        "end_turn_id": end_turn_id,
+        "probability_change": float(change_df["changed"].mean()),
+        "changed_count": changed_count,
+        "total_count": total_count,
+    }
+    json_path = _probability_of_change_json_path(out_path)
+    json_path.parent.mkdir(parents=True, exist_ok=True)
+    json_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    return True
 
 
 def _plot_run_binned_prob_of_change(
@@ -296,17 +455,18 @@ def _plot_run_binned_prob_of_change(
     fig.tight_layout()
     fig.savefig(out_path, dpi=160, bbox_inches="tight")
     plt.close(fig)
-    print(f"saved_plot: {out_path}")
     return True
 
 
-def _plot_run_binned_prob_of_change_from_2_to_3_turn(
+def _plot_run_binned_prob_of_change_for_turn_pair(
     *,
     run_row: pd.Series,
     run_score_df: pd.DataFrame,
     metric: str,
     variant: str,
     out_path: Path,
+    start_turn_id: int,
+    end_turn_id: int,
 ) -> bool:
     sample_file = _sample_file_from_score_rows(run_score_df)
     if sample_file is None or not sample_file.exists():
@@ -314,37 +474,40 @@ def _plot_run_binned_prob_of_change_from_2_to_3_turn(
 
     diag_df = _build_greedy_turn_pair_diag_dataframe(
         run_score_df,
-        start_turn_id=1,
-        end_turn_id=2,
+        start_turn_id=start_turn_id,
+        end_turn_id=end_turn_id,
     )
     if diag_df.empty:
         return False
 
     prompt_index = _build_prompt_sample_index(sample_file)
-    turn23_diff_binned_df = _build_turn_pair_diff_binned_dataframe(
+    turn_pair_diff_binned_df = _build_turn_pair_diff_binned_dataframe(
         diag_df=diag_df,
         prompt_index=prompt_index,
-        start_turn_id=1,
-        end_turn_id=2,
+        start_turn_id=start_turn_id,
+        end_turn_id=end_turn_id,
         n_bins=10,
     )
-    if turn23_diff_binned_df.empty:
+    if turn_pair_diff_binned_df.empty:
         return False
 
     fig, ax = plt.subplots(figsize=(7.2, 4.8))
     ax.plot(
-        turn23_diff_binned_df["bin_center"],
-        turn23_diff_binned_df["prob_diff"],
+        turn_pair_diff_binned_df["bin_center"],
+        turn_pair_diff_binned_df["prob_diff"],
         marker="o",
         linewidth=1.4,
         markersize=4.4,
         color="#2c7fb8",
     )
     ax.set_ylim(-0.02, 1.02)
-    ax.set_xlabel("greedy quality (turn2) bin center")
-    ax.set_ylabel("P(turn3 output != turn2 output)")
+    ax.set_xlabel(f"greedy quality (turn{start_turn_id + 1}) bin center")
+    ax.set_ylabel(
+        f"P(turn{end_turn_id + 1} output != turn{start_turn_id + 1} output)"
+    )
     ax.set_title(
-        "binned probability of turn3 string differing from turn2 string\n"
+        f"binned probability of turn{end_turn_id + 1} string differing from "
+        f"turn{start_turn_id + 1} string\n"
         f"{run_row.get('dataset_tag', 'unknown_dataset')} | "
         f"{run_row.get('tgt') or run_row.get('lp') or 'unknown_lang'} | "
         f"{run_row.get('scenario_name', 'unknown_scenario')} | "
@@ -356,7 +519,289 @@ def _plot_run_binned_prob_of_change_from_2_to_3_turn(
     fig.tight_layout()
     fig.savefig(out_path, dpi=160, bbox_inches="tight")
     plt.close(fig)
-    print(f"saved_plot: {out_path}")
+    return True
+
+
+def _plot_probability_of_change_grid(
+    *,
+    out_root: Path,
+    dataset_tag: str,
+    lang: str,
+    scenarios: list[str],
+    columns: list[tuple[str, str]],
+    metric: str,
+    variant: str,
+) -> bool:
+    source_paths: list[list[Path]] = []
+    has_any_source = False
+    for scenario_name in scenarios:
+        row_paths: list[Path] = []
+        for _, source_dir in columns:
+            path = _probability_of_change_source_path(
+                out_root,
+                dataset_tag=dataset_tag,
+                lang=lang,
+                scenario_name=scenario_name,
+                metric=metric,
+                variant=variant,
+                source_dir=source_dir,
+            )
+            if path.exists():
+                has_any_source = True
+            row_paths.append(path)
+        source_paths.append(row_paths)
+
+    if not has_any_source:
+        return False
+
+    fig, axes = plt.subplots(
+        nrows=len(scenarios),
+        ncols=len(columns),
+        figsize=(4.1 * len(columns), 2.4 * len(scenarios)),
+        squeeze=False,
+    )
+    fig.subplots_adjust(
+        left=0.18,
+        right=0.995,
+        top=0.90,
+        bottom=0.05,
+        hspace=0.02,
+        wspace=0.03,
+    )
+
+    for row_idx, scenario_name in enumerate(scenarios):
+        for col_idx, (column_label, _) in enumerate(columns):
+            ax = axes[row_idx, col_idx]
+            path = source_paths[row_idx][col_idx]
+            ax.set_xticks([])
+            ax.set_yticks([])
+            if row_idx == 0:
+                ax.set_title(column_label)
+            if col_idx == 0:
+                ax.set_ylabel(
+                    scenario_name,
+                    rotation=0,
+                    ha="right",
+                    va="center",
+                    labelpad=22,
+                    fontsize=10,
+                )
+            if path.exists():
+                ax.imshow(plt.imread(path))
+            else:
+                ax.text(0.5, 0.5, "missing", ha="center", va="center", fontsize=11)
+                ax.set_facecolor("#f3f3f3")
+
+    fig.suptitle(f"probability of change grid | {dataset_tag} | {lang} | {metric} ({variant})")
+    out_path = _probability_of_change_grid_out_path(
+        out_root=out_root,
+        dataset_tag=dataset_tag,
+        lang=lang,
+        metric=metric,
+        variant=variant,
+    )
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=160, bbox_inches="tight")
+    plt.close(fig)
+    return True
+
+
+def _scenario_short_label(scenario_name: str) -> str:
+    if scenario_name == "mt_multi_turn_please_translate_again":
+        return "again"
+    if scenario_name == "mt_multi_turn_please_translate_again_for_a_better":
+        return "better"
+    if scenario_name == "mt_multi_turn_please_translate_again_for_a_better_deside_if_change":
+        return "decide"
+    return scenario_name
+
+
+def _plot_probability_of_change_bars(
+    *,
+    out_root: Path,
+    dataset_tag: str,
+    lang: str,
+    scenarios: list[str],
+    columns: list[tuple[str, str]],
+    metric: str,
+    variant: str,
+) -> bool:
+    records: list[dict[str, object]] = []
+    for scenario_name in scenarios:
+        for column_label, source_dir in columns:
+            json_path = _probability_of_change_json_path(
+                _probability_of_change_source_path(
+                    out_root,
+                    dataset_tag=dataset_tag,
+                    lang=lang,
+                    scenario_name=scenario_name,
+                    metric=metric,
+                    variant=variant,
+                    source_dir=source_dir,
+                )
+            )
+            if not json_path.exists():
+                continue
+            payload = json.loads(json_path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                continue
+            probability_change = payload.get("probability_change")
+            if probability_change is None:
+                continue
+            records.append(
+                {
+                    "scenario_name": scenario_name,
+                    "turn_transition": column_label,
+                    "probability_change": float(probability_change),
+                }
+            )
+
+    if not records:
+        return False
+
+    summary_df = pd.DataFrame(records)
+    fig, ax = plt.subplots(figsize=(5.8, 2.9))
+    x = np.arange(len(columns), dtype=float)
+    group_width = 0.80
+    bar_width = group_width / max(len(scenarios), 1)
+    palette = ["#1b9e77", "#d95f02", "#7570b3"]
+
+    for scenario_idx, scenario_name in enumerate(scenarios):
+        scenario_df = (
+            summary_df[summary_df["scenario_name"] == scenario_name][
+                ["turn_transition", "probability_change"]
+            ]
+            .set_index("turn_transition")
+            .reindex([label for label, _ in columns])
+        )
+        offset = -group_width / 2 + scenario_idx * bar_width + bar_width / 2
+        ax.bar(
+            x + offset,
+            scenario_df["probability_change"].to_numpy(dtype=float),
+            width=bar_width * 0.92,
+            label=_scenario_short_label(scenario_name),
+            color=palette[scenario_idx % len(palette)],
+            alpha=0.88,
+        )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([label for label, _ in columns])
+    ax.set_ylim(0.0, 1.0)
+    ax.set_ylabel("P(change)")
+    ax.set_title(f"probability of change | {dataset_tag} | {lang} | {metric} ({variant})")
+    ax.grid(axis="y", alpha=0.25, linewidth=0.7)
+    ax.legend(ncol=min(len(scenarios), 3), fontsize=8, frameon=False, loc="upper right")
+
+    out_path = _probability_of_change_bar_out_path(
+        out_root=out_root,
+        dataset_tag=dataset_tag,
+        lang=lang,
+        metric=metric,
+        variant=variant,
+    )
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=160, bbox_inches="tight")
+    plt.close(fig)
+    return True
+
+
+def _plot_turn_curve_bars(
+    *,
+    out_root: Path,
+    selected_runs_df: pd.DataFrame,
+    current_scores: pd.DataFrame,
+    dataset_tag: str,
+    lang: str,
+    scenarios: list[str],
+    metric: str,
+    variant: str,
+) -> bool:
+    if selected_runs_df.empty or current_scores.empty:
+        return False
+
+    turn_col = "sequential_id" if "sequential_id" in current_scores.columns else "response_idx"
+    records: list[dict[str, object]] = []
+
+    for scenario_name in scenarios:
+        run_rows = selected_runs_df[
+            (selected_runs_df["dataset_tag"] == dataset_tag)
+            & (selected_runs_df["tgt"] == lang)
+            & (selected_runs_df["scenario_name"] == scenario_name)
+        ].copy()
+        if run_rows.empty:
+            continue
+
+        run_names = run_rows["run_name"].astype(str).tolist()
+        scenario_scores = current_scores[current_scores["run_name"].isin(run_names)].copy()
+        if scenario_scores.empty:
+            continue
+
+        scenario_scores["turn_id"] = pd.to_numeric(scenario_scores[turn_col], errors="coerce")
+        turn_means = (
+            scenario_scores.dropna(subset=["turn_id", "quality"])
+            .groupby("turn_id", as_index=False)["quality"]
+            .mean()
+            .sort_values("turn_id")
+        )
+        for _, row in turn_means.iterrows():
+            records.append(
+                {
+                    "scenario_name": scenario_name,
+                    "turn_id": int(row["turn_id"]),
+                    "mean_quality": float(row["quality"]),
+                }
+            )
+
+    if not records:
+        return False
+
+    summary_df = pd.DataFrame(records)
+    turn_ids = sorted(summary_df["turn_id"].dropna().astype(int).unique().tolist())
+    if not turn_ids:
+        return False
+
+    fig, ax = plt.subplots(figsize=(6.2, 2.9))
+    x = np.arange(len(turn_ids), dtype=float)
+    group_width = 0.80
+    bar_width = group_width / max(len(scenarios), 1)
+    palette = ["#1b9e77", "#d95f02", "#7570b3"]
+
+    for scenario_idx, scenario_name in enumerate(scenarios):
+        scenario_df = (
+            summary_df[summary_df["scenario_name"] == scenario_name][["turn_id", "mean_quality"]]
+            .set_index("turn_id")
+            .reindex(turn_ids)
+        )
+        offset = -group_width / 2 + scenario_idx * bar_width + bar_width / 2
+        ax.bar(
+            x + offset,
+            scenario_df["mean_quality"].to_numpy(dtype=float),
+            width=bar_width * 0.92,
+            label=_scenario_short_label(scenario_name),
+            color=palette[scenario_idx % len(palette)],
+            alpha=0.88,
+        )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"turn{turn_id}" for turn_id in turn_ids])
+    ax.set_ylabel("mean quality")
+    ax.set_ylim(0.5, 1.0)
+    ax.set_title(f"turn quality | {dataset_tag} | {lang} | {metric} ({variant})")
+    ax.grid(axis="y", alpha=0.25, linewidth=0.7)
+    ax.legend(ncol=min(len(scenarios), 3), fontsize=8, frameon=False, loc="upper right")
+
+    out_path = _turn_curve_bar_out_path(
+        out_root=out_root,
+        dataset_tag=dataset_tag,
+        lang=lang,
+        metric=metric,
+        variant=variant,
+    )
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=160, bbox_inches="tight")
+    plt.close(fig)
     return True
 
 
@@ -365,6 +810,7 @@ def _plot_dataset_best_worst(
     run_rows: pd.DataFrame,
     *,
     dataset_tag: str,
+    scenario_name: str,
     metric: str,
     variant: str,
     out_path: Path,
@@ -381,7 +827,7 @@ def _plot_dataset_best_worst(
         return False
     prompt_summary["gap"] = prompt_summary["best_quality"] - prompt_summary["worst_quality"]
 
-    langs = [str(item) for item in run_rows["tgt"].dropna().astype(str).tolist()]
+    langs = pd.unique(run_rows["tgt"].dropna().astype(str)).tolist()
     if not langs:
         return False
 
@@ -430,10 +876,8 @@ def _plot_dataset_best_worst(
     group_width = 0.82
     lang_width = group_width / max(len(langs), 1)
     bar_width = lang_width / 1.35
-    lang_colors = {
-        lang: color
-        for lang, color in zip(langs, ["#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"])
-    }
+    palette = ["#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e", "#e6ab02", "#a6761d"]
+    lang_colors = {lang: color for lang, color in zip(langs, cycle(palette))}
 
     for lang_idx, lang in enumerate(langs):
         lang_df = (
@@ -455,7 +899,7 @@ def _plot_dataset_best_worst(
     bar_ax.set_xticklabels(kind_order)
     bar_ax.set_ylabel("mean quality")
     bar_ax.set_title(
-        f"greedy reranker summary | {dataset_tag} | {metric} ({variant})\n"
+        f"greedy reranker summary | {dataset_tag} | {scenario_name} | {metric} ({variant})\n"
         "average over prompts"
     )
     bar_ax.grid(axis="y", alpha=0.25, linewidth=0.7)
@@ -507,7 +951,6 @@ def _plot_dataset_best_worst(
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=160, bbox_inches="tight")
     plt.close(fig)
-    print(f"saved_plot: {out_path}")
     return True
 
 
@@ -533,18 +976,27 @@ def plot_greedy(
             if current_scores.empty:
                 continue
 
-            for dataset_tag, dataset_runs in selected_runs_df.groupby("dataset_tag", sort=True):
-                run_names = dataset_runs["run_name"].astype(str).tolist()
-                dataset_scores = current_scores[current_scores["run_name"].isin(run_names)].copy()
-                if dataset_scores.empty:
+            for (dataset_tag, scenario_name), scenario_runs in selected_runs_df.groupby(
+                ["dataset_tag", "scenario_name"], sort=True
+            ):
+                run_names = scenario_runs["run_name"].astype(str).tolist()
+                scenario_scores = current_scores[current_scores["run_name"].isin(run_names)].copy()
+                if scenario_scores.empty:
                     continue
                 if _plot_dataset_best_worst(
-                    dataset_scores,
-                    dataset_runs,
+                    scenario_scores,
+                    scenario_runs,
                     dataset_tag=str(dataset_tag),
+                    scenario_name=str(scenario_name),
                     metric=metric,
                     variant=variant,
-                    out_path=_aggregated_out_path(out_root, str(dataset_tag), metric, variant),
+                    out_path=_aggregated_out_path(
+                        out_root,
+                        str(dataset_tag),
+                        str(scenario_name),
+                        metric,
+                        variant,
+                    ),
                 ):
                     saved += 1
 
@@ -561,14 +1013,43 @@ def plot_greedy(
                     out_path=_binned_prob_out_path(out_root, run_row, metric, variant),
                 ):
                     saved += 1
-                if _plot_run_binned_prob_of_change_from_2_to_3_turn(
+                _save_turn_pair_change_summary(
                     run_row=run_row,
                     run_score_df=run_scores,
                     metric=metric,
                     variant=variant,
-                    out_path=_binned_prob_23_out_path(out_root, run_row, metric, variant),
-                ):
-                    saved += 1
+                    out_path=_binned_prob_out_path(out_root, run_row, metric, variant),
+                    start_turn_id=0,
+                    end_turn_id=1,
+                )
+                for start_turn_id, end_turn_id in ((1, 2), (2, 3), (3, 4)):
+                    turn_pair_out_path = _binned_prob_turn_pair_out_path(
+                        out_root,
+                        run_row,
+                        metric,
+                        variant,
+                        start_turn_id=start_turn_id,
+                        end_turn_id=end_turn_id,
+                    )
+                    if _plot_run_binned_prob_of_change_for_turn_pair(
+                        run_row=run_row,
+                        run_score_df=run_scores,
+                        metric=metric,
+                        variant=variant,
+                        out_path=turn_pair_out_path,
+                        start_turn_id=start_turn_id,
+                        end_turn_id=end_turn_id,
+                    ):
+                        saved += 1
+                    _save_turn_pair_change_summary(
+                        run_row=run_row,
+                        run_score_df=run_scores,
+                        metric=metric,
+                        variant=variant,
+                        out_path=turn_pair_out_path,
+                        start_turn_id=start_turn_id,
+                        end_turn_id=end_turn_id,
+                    )
                 if _plot_run_turn_curve(
                     run_row=run_row,
                     run_score_df=run_scores,
@@ -576,6 +1057,39 @@ def plot_greedy(
                     variant=variant,
                     sweep_name="greedy",
                     out_path=_turn_curve_out_path(out_root, run_row, metric, variant),
+                ):
+                    saved += 1
+
+            for dataset_tag in GRID_DATASET_TAGS:
+                if _plot_probability_of_change_grid(
+                    out_root=out_root,
+                    dataset_tag=dataset_tag,
+                    lang=GRID_LANG,
+                    scenarios=GRID_SCENARIOS,
+                    columns=GRID_COLUMNS,
+                    metric=metric,
+                    variant=variant,
+                ):
+                    saved += 1
+                if _plot_probability_of_change_bars(
+                    out_root=out_root,
+                    dataset_tag=dataset_tag,
+                    lang=GRID_LANG,
+                    scenarios=GRID_SCENARIOS,
+                    columns=GRID_COLUMNS,
+                    metric=metric,
+                    variant=variant,
+                ):
+                    saved += 1
+                if _plot_turn_curve_bars(
+                    out_root=out_root,
+                    selected_runs_df=selected_runs_df,
+                    current_scores=current_scores,
+                    dataset_tag=dataset_tag,
+                    lang=GRID_LANG,
+                    scenarios=GRID_SCENARIOS,
+                    metric=metric,
+                    variant=variant,
                 ):
                     saved += 1
 

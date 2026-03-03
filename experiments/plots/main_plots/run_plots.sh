@@ -1,0 +1,1 @@
+PYTHONPATH=. .venv/bin/python -m experiments.plots.main_plots.plot

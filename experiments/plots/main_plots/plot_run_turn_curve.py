@@ -112,7 +112,6 @@ def _plot_run_turn_curve(
     fig.tight_layout()
     fig.savefig(out_path, dpi=160, bbox_inches="tight")
     plt.close(fig)
-    print(f"saved_plot: {out_path}")
     return True
 
 

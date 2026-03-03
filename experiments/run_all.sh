@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT}"
 
 MODEL_CONFIG="configs/model_configs/qwen3-32b-instruct.yaml"
-EXPERIMENT_DIR="clear_run_2mar"
+EXPERIMENT_DIR="clear_run_2mar_exp2"
 EXPERIMENT_DIR_ARGS=()
 if [[ -n "${EXPERIMENT_DIR}" ]]; then
   EXPERIMENT_DIR_ARGS=(--experiment-dir "${EXPERIMENT_DIR}")
@@ -40,15 +40,29 @@ fi
 #   "${EXPERIMENT_DIR_ARGS[@]}"
 
 # greedy (normal dataset)
+# .venv/bin/python experiments/mt/sweep_runner.py \
+#   --config experiments/mt/sweep_configs/mt_greedy.yaml \
+#   --submit \
+#   --override "model_config=${MODEL_CONFIG}" \
+#   "${EXPERIMENT_DIR_ARGS[@]}"
+
+# greedy (doc dataset)
+# .venv/bin/python experiments/mt/sweep_runner.py \
+#   --config experiments/mt/sweep_configs/mt_greedy_doc.yaml \
+#   --submit \
+#   --override "model_config=${MODEL_CONFIG}" \
+#   "${EXPERIMENT_DIR_ARGS[@]}"
+
+# greedy decide-if-change (normal dataset)
 .venv/bin/python experiments/mt/sweep_runner.py \
-  --config experiments/mt/sweep_configs/mt_greedy.yaml \
+  --config experiments/mt/sweep_configs/mt_greedy_decide_if_change.yaml \
   --submit \
   --override "model_config=${MODEL_CONFIG}" \
   "${EXPERIMENT_DIR_ARGS[@]}"
 
-# greedy (doc dataset)
+# greedy decide-if-change (doc dataset)
 .venv/bin/python experiments/mt/sweep_runner.py \
-  --config experiments/mt/sweep_configs/mt_greedy_doc.yaml \
+  --config experiments/mt/sweep_configs/mt_greedy_doc_decide_if_change.yaml \
   --submit \
   --override "model_config=${MODEL_CONFIG}" \
   "${EXPERIMENT_DIR_ARGS[@]}"

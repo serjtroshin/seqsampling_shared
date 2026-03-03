@@ -4,7 +4,6 @@ import argparse
 import json
 import math
 import os
-from pprint import pprint
 from pathlib import Path
 from typing import Any
 
@@ -469,8 +468,6 @@ def _write_grouped_samples_jsonl(
             ]
             txt_blocks.append("\n".join(prompt_lines))
     txt_path.write_text("\n\n".join(txt_blocks), encoding="utf-8")
-    print(f"saved_jsonl: {out_path} prompts={len(prompt_ids)}")
-    print(f"saved_txt: {txt_path} prompts={len(txt_blocks)}")
 
 
 def _save_parallel_iqr_grouped_samples(
@@ -704,7 +701,6 @@ def _plot_prompt_stats_scatter(
     fig.tight_layout()
     fig.savefig(out_path, dpi=160, bbox_inches="tight")
     plt.close(fig)
-    print(f"saved_plot: {out_path}")
 
 
 def _build_turn_delta_dataframe(
@@ -1142,7 +1138,6 @@ def _plot_sequential_prompt_stats_subplots(
     fig.tight_layout()
     fig.savefig(out_path, dpi=160, bbox_inches="tight")
     plt.close(fig)
-    print(f"saved_plot: {out_path}")
 
 
 def _resolve_metric_variant_pairs(
@@ -1240,7 +1235,7 @@ def match_parallel_and_sequential_runs(
     runs_df: pd.DataFrame,
     score_df: pd.DataFrame | None = None,
 ) -> list[tuple[dict[str, Any], list[dict[str, Any]]]]:
-    """Match each parallel run with sequential runs under same model/lang/dataset.
+    """Match each parallel run with sequential runs under same model/lang/dataset/sampling.
 
     Args:
         runs_df: Informative run dataframe from load_all_finished_runs_dataframe.
@@ -1262,12 +1257,13 @@ def match_parallel_and_sequential_runs(
     sequential_df = base_df[~base_df["is_parallel"]].copy()
     prompt_ids_by_run = _build_prompt_id_index(score_df) if score_df is not None else {}
 
-    seq_index: dict[tuple[str, str, str], list[pd.Series]] = {}
+    seq_index: dict[tuple[str, str, str, str], list[pd.Series]] = {}
     for _, row in sequential_df.iterrows():
         key = (
             str(row.get("model") or ""),
             str(row.get("lang_key") or ""),
             _dataset_key(row),
+            str(row.get("sampling_profile") or ""),
         )
         seq_index.setdefault(key, []).append(row)
 
@@ -1277,6 +1273,7 @@ def match_parallel_and_sequential_runs(
             str(row.get("model") or ""),
             str(row.get("lang_key") or ""),
             _dataset_key(row),
+            str(row.get("sampling_profile") or ""),
         )
         parallel_info = _to_run_info(row)
         seq_rows = seq_index.get(key, [])
@@ -1334,16 +1331,10 @@ def plot_parallel_vs_sequential(
     if max_groups is not None and max_groups >= 0:
         matches = matches[:max_groups]
 
-    printable: list[list[Any]] = []
-    for parallel_info, seq_infos in matches:
-        printable.append([parallel_info, seq_infos])
-
-    print("draft_parallel_vs_sequential_matches:")
-    pprint(printable, sort_dicts=False, width=140)
-    print(f"draft_parallel_count={len(matches)}")
+    total_links = sum(len(seq_infos) for _, seq_infos in matches)
     print(
-        "draft_total_sequential_links="
-        f"{sum(len(seq_infos) for _, seq_infos in matches)}"
+        "parallel_vs_sequential_matches: "
+        f"parallel_runs={len(matches)} sequential_links={total_links}"
     )
 
     base_df = (
@@ -1369,7 +1360,7 @@ def plot_parallel_vs_sequential(
 
         run_scores = score_df[score_df["run_name"] == parallel_name].copy()
         if run_scores.empty:
-            print(f"[DRAFT PARALLEL LABELS] no scores for run={parallel_name}")
+            print(f"[MATCH CHECK FAIL] no scores for parallel run={parallel_name}")
             continue
         num_generations = _read_num_generations_for_run(run_row)
 
@@ -1413,22 +1404,6 @@ def plot_parallel_vs_sequential(
                         parallel_sample_file
                     )
                 parallel_prompt_index = sample_prompt_cache[parallel_sample_file]
-
-            print(
-                "[DRAFT PARALLEL LABELS] "
-                f"run={parallel_name} metric={metric} variant={variant} "
-                f"prompts={len(labels_df)} n_generations={num_generations} "
-                f"aligned_sequential={len(seq_infos)}"
-            )
-            if max_prompts_print < 0:
-                to_print = labels_df
-            else:
-                to_print = labels_df.head(max_prompts_print)
-            print(
-                to_print[
-                    ["prompt_id", "n_samples", "q1", "median", "q3", "iqr"]
-                ].to_string(index=False)
-            )
 
             bundle_dir = _parallel_vs_sequential_out_dir(
                 out_dir=out_dir,
@@ -1556,6 +1531,10 @@ def plot_parallel_vs_sequential(
                         tail_percent=parallel_iqr_tail_percent,
                     )
 
+    print(
+        "parallel_vs_sequential_summary: "
+        f"parallel_runs={len(matches)} sequential_links={total_links} saved={saved}"
+    )
     return saved
 
 
