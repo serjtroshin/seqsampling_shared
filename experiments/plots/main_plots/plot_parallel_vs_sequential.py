@@ -16,19 +16,25 @@ import yaml
 
 try:
     from experiments.plots.main_plots.utils import (
+        load_jsonl_records,
         load_all_finished_dataframes,
+        metric_path_component,
+        path_component,
         parse_multi_args,
+        safe_int,
     )
 except ModuleNotFoundError:
-    from utils import load_all_finished_dataframes, parse_multi_args
+    from utils import (
+        load_jsonl_records,
+        load_all_finished_dataframes,
+        metric_path_component,
+        path_component,
+        parse_multi_args,
+        safe_int,
+    )
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
-    """Create CLI parser for the draft parallel-vs-sequential matcher.
-
-    Args:
-        None.
-    """
     parser = argparse.ArgumentParser(
         description=(
             "Draft utility: match parallel runs with sequential runs that share "
@@ -81,11 +87,6 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 
 def _is_parallel_run(row: pd.Series) -> bool:
-    """Heuristic to identify parallel runs.
-
-    Args:
-        row: Run-level metadata row.
-    """
     scenario_name = str(row.get("scenario_name") or "").lower()
     run_rel_path = str(row.get("run_rel_path") or "").lower()
     run_name = str(row.get("run_name") or "").lower()
@@ -97,11 +98,6 @@ def _is_parallel_run(row: pd.Series) -> bool:
 
 
 def _lang_key(row: pd.Series) -> str:
-    """Return language key used for matching.
-
-    Args:
-        row: Run-level metadata row.
-    """
     lp = row.get("lp")
     tgt = row.get("tgt")
     if isinstance(lp, str) and lp:
@@ -112,11 +108,6 @@ def _lang_key(row: pd.Series) -> str:
 
 
 def _dataset_key(row: pd.Series) -> str:
-    """Return dataset tag key used for matching.
-
-    Args:
-        row: Run-level metadata row.
-    """
     dataset_tag = row.get("dataset_tag")
     if isinstance(dataset_tag, str) and dataset_tag:
         return dataset_tag
@@ -124,11 +115,6 @@ def _dataset_key(row: pd.Series) -> str:
 
 
 def _to_run_info(row: pd.Series) -> dict[str, Any]:
-    """Convert dataframe row into a compact printable run dictionary.
-
-    Args:
-        row: Run-level metadata row.
-    """
     return {
         "run_index": int(row.get("run_index", -1)),
         "run_name": str(row.get("run_name") or ""),
@@ -140,71 +126,31 @@ def _to_run_info(row: pd.Series) -> dict[str, Any]:
         "run_rel_path": str(row.get("run_rel_path") or ""),
     }
 
-
-def _path_component(value: str, fallback: str) -> str:
-    """Keep path components human-readable while avoiding nested separators.
-
-    Args:
-        value: Raw path component value.
-        fallback: Fallback value when input is empty.
-    """
-    cleaned = value.strip()
-    if not cleaned:
-        cleaned = fallback
-    return cleaned.replace("/", "-")
-
-
 def _parallel_vs_sequential_out_dir(
     out_dir: Path,
     parallel_row: pd.Series,
     metric: str,
     variant: str,
 ) -> Path:
-    """Build output directory for one parallel run + metric/variant plot bundle.
-
-    Args:
-        out_dir: Root output directory for this plot family.
-        parallel_row: Parallel run metadata row.
-        metric: Metric name.
-        variant: Variant name.
-    """
-    dataset_tag = _path_component(_dataset_key(parallel_row), "unknown_dataset")
-    lang = _path_component(_lang_key(parallel_row), "unknown")
-    scenario_name = _path_component(str(parallel_row.get("scenario_name") or ""), "unknown_scenario")
-    run_name = _path_component(str(parallel_row.get("run_name") or ""), "unknown_run")
-    metric_name = _path_component(metric, "metric")
-    if variant != "default":
-        metric_name = f"{metric_name}__{_path_component(variant, 'variant')}"
+    dataset_tag = path_component(_dataset_key(parallel_row), "unknown_dataset")
+    lang = path_component(_lang_key(parallel_row), "unknown")
+    scenario_name = path_component(str(parallel_row.get("scenario_name") or ""), "unknown_scenario")
+    run_name = path_component(str(parallel_row.get("run_name") or ""), "unknown_run")
+    metric_name = metric_path_component(metric, variant)
     return out_dir / dataset_tag / lang / scenario_name / f"{metric_name}__{run_name}"
 
 
 def _parallel_bundle_parallel_plot_path(bundle_dir: Path) -> Path:
-    """Build output path for the parallel plot in a bundle directory.
-
-    Args:
-        bundle_dir: Bundle directory path for one parallel run + metric.
-    """
     return bundle_dir / "parallel.png"
 
 
 def _parallel_bundle_sequential_plot_path(bundle_dir: Path, seq_row: pd.Series) -> Path:
-    """Build output path for one matched sequential plot in the bundle.
-
-    Args:
-        bundle_dir: Bundle directory path for one parallel run + metric.
-        seq_row: Sequential run metadata row.
-    """
-    scenario_name = _path_component(str(seq_row.get("scenario_name") or ""), "unknown_scenario")
-    run_name = _path_component(str(seq_row.get("run_name") or ""), "unknown_run")
+    scenario_name = path_component(str(seq_row.get("scenario_name") or ""), "unknown_scenario")
+    run_name = path_component(str(seq_row.get("run_name") or ""), "unknown_run")
     return bundle_dir / f"{scenario_name}__{run_name}.png"
 
 
 def _read_num_generations_for_run(run_row: pd.Series) -> int:
-    """Load num_generations from scenario_resolved.yaml for a run.
-
-    Args:
-        run_row: Run-level metadata row containing run_dir.
-    """
     run_dir_raw = run_row.get("run_dir")
     if not isinstance(run_dir_raw, str) or not run_dir_raw:
         raise ValueError(f"Missing run_dir for run: {run_row.get('run_name')}")
@@ -227,11 +173,6 @@ def _read_num_generations_for_run(run_row: pd.Series) -> int:
 def _compute_prompt_quality_labels(
     run_scores_df: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Compute q1/median/q3 and IQR labels per prompt_id.
-
-    Args:
-        run_scores_df: Score rows for exactly one run and one metric/variant.
-    """
     grouped = run_scores_df.groupby("prompt_id")["quality"]
     out_df = pd.DataFrame(
         {
@@ -250,45 +191,7 @@ def _compute_prompt_quality_labels(
     out_df["iqr"] = out_df.apply(_iqr, axis=1)
     return out_df.sort_values("prompt_id").reset_index(drop=True)
 
-
-def _safe_int(value: Any) -> int | None:
-    """Safely coerce an arbitrary value to int.
-
-    Args:
-        value: Input value.
-    """
-    try:
-        if value is None:
-            return None
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _load_jsonl_records(path: Path) -> list[dict[str, Any]]:
-    """Load JSONL records from a file.
-
-    Args:
-        path: JSONL path.
-    """
-    rows: list[dict[str, Any]] = []
-    with path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            item = line.strip()
-            if not item:
-                continue
-            payload = json.loads(item)
-            if isinstance(payload, dict):
-                rows.append(payload)
-    return rows
-
-
 def _sample_file_from_score_rows(score_rows: pd.DataFrame) -> Path | None:
-    """Resolve sample file path from score rows for one run+metric+variant.
-
-    Args:
-        score_rows: Score dataframe slice.
-    """
     if "sample_file" not in score_rows.columns:
         return None
     candidates: list[str] = []
@@ -307,11 +210,6 @@ def _sample_file_from_score_rows(score_rows: pd.DataFrame) -> Path | None:
 
 
 def _sample_outputs_from_row(row: dict[str, Any]) -> list[str]:
-    """Extract a best-effort ordered list of outputs from one sample record.
-
-    Args:
-        row: One JSON object from samples*.jsonl.
-    """
     for key in ("solutions", "generations", "raw_generations"):
         values = row.get(key)
         if isinstance(values, list):
@@ -320,13 +218,8 @@ def _sample_outputs_from_row(row: dict[str, Any]) -> list[str]:
 
 
 def _build_prompt_sample_index(sample_file: Path) -> dict[str, dict[str, Any]]:
-    """Build prompt_id -> sample payload index from samples JSONL.
-
-    Args:
-        sample_file: Source JSONL with generation rows.
-    """
     prompt_index: dict[str, dict[str, Any]] = {}
-    rows = _load_jsonl_records(sample_file)
+    rows = load_jsonl_records(sample_file)
     for row in rows:
         prompt_id = str(row.get("prompt_id", ""))
         if not prompt_id:
@@ -341,7 +234,7 @@ def _build_prompt_sample_index(sample_file: Path) -> dict[str, dict[str, Any]]:
             samples.append(
                 {
                     "response_idx": response_idx,
-                    "sequential_id": _safe_int(seq_id),
+                    "sequential_id": safe_int(seq_id),
                     "text": text,
                 }
             )
@@ -513,8 +406,8 @@ def _save_parallel_iqr_grouped_samples(
     high_prompt_ids = prompt_order[:tail_count]
     low_prompt_ids = prompt_order[-tail_count:]
 
-    scenario_name = _path_component(str(sequential_row.get("scenario_name") or ""), "unknown_scenario")
-    run_name = _path_component(str(sequential_row.get("run_name") or ""), "unknown_run")
+    scenario_name = path_component(str(sequential_row.get("scenario_name") or ""), "unknown_scenario")
+    run_name = path_component(str(sequential_row.get("run_name") or ""), "unknown_run")
     prefix = f"samples__{scenario_name}__{run_name}"
     low_path = bundle_dir / f"{prefix}__parallel_iqr_low.jsonl"
     high_path = bundle_dir / f"{prefix}__parallel_iqr_high.jsonl"
@@ -722,7 +615,7 @@ def _build_turn_delta_dataframe(
     turn_col = "sequential_id" if "sequential_id" in seq_scores_df.columns else "response_idx"
     local = seq_scores_df.copy()
     local["prompt_id"] = local["prompt_id"].astype(str)
-    local["turn_id"] = local[turn_col].map(_safe_int)
+    local["turn_id"] = local[turn_col].map(safe_int)
     turn_means = (
         local.dropna(subset=["prompt_id", "quality", "turn_id"])
         .groupby(["prompt_id", "turn_id"], as_index=False)["quality"]
@@ -788,9 +681,9 @@ def _sample_turn_text_map(sample_payload: dict[str, Any]) -> dict[int, str]:
     for item in samples:
         if not isinstance(item, dict):
             continue
-        turn_id = _safe_int(item.get("sequential_id"))
+        turn_id = safe_int(item.get("sequential_id"))
         if turn_id is None:
-            turn_id = _safe_int(item.get("response_idx"))
+            turn_id = safe_int(item.get("response_idx"))
         if turn_id is None:
             continue
         if turn_id in out:

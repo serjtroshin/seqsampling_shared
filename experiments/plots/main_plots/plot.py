@@ -27,8 +27,6 @@ except ModuleNotFoundError:
 
 @dataclass
 class PlotJob:
-    """Serializable specification for one plot family job."""
-
     plot_name: str
     out_dir: Path
     metrics: tuple[str, ...]
@@ -40,11 +38,6 @@ class PlotJob:
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
-    """Create CLI parser for the main all-finished-runs plotting entrypoint.
-
-    Args:
-        None.
-    """
     parser = argparse.ArgumentParser(
         description="Run main plots over outputs/mt/all_finished_runs."
     )
@@ -92,13 +85,6 @@ def _resolve_metric_variant_filters(
     selected_metrics: list[str],
     selected_variants: list[str],
 ) -> tuple[list[str], list[str]]:
-    """Validate and resolve requested metric/variant filters.
-
-    Args:
-        runs_df: Informative run dataframe returned by loader utilities.
-        selected_metrics: User-requested metric names from CLI.
-        selected_variants: User-requested variant names from CLI.
-    """
     metric_df = runs_df[runs_df["metric"].notna()].copy()
     if metric_df.empty:
         raise ValueError("No evaluation metric rows were discovered in runs_dir.")
@@ -123,21 +109,33 @@ def _resolve_metric_variant_filters(
     return metrics, variants
 
 
+def _resolve_multiturn_run_coords(row: pd.Series) -> tuple[str, str] | None:
+    source_root = Path("outputs/mt/all_finished_runs").resolve()
+    raw_run_dir = row.get("run_dir")
+    if isinstance(raw_run_dir, str) and raw_run_dir:
+        try:
+            rel_parts = Path(raw_run_dir).resolve().relative_to(source_root).parts
+        except ValueError:
+            rel_parts = ()
+        if len(rel_parts) >= 2 and rel_parts[0] and rel_parts[1]:
+            return str(rel_parts[0]), str(rel_parts[1])
+
+    model_name = str(row.get("model") or "")
+    sampling_profile = str(row.get("sampling_profile") or "")
+    if model_name and sampling_profile:
+        return model_name, sampling_profile
+    return None
+
+
 def _build_multiturn_plot_job(
     *,
     runs_df: pd.DataFrame,
     base_runs_df: pd.DataFrame,
     score_df: pd.DataFrame,
-    runs_dir: Path,
     out_root: Path,
     metrics: tuple[str, ...],
     variants: tuple[str, ...],
 ) -> PlotJob | None:
-    """Build one multi-turn plot job for a concrete model/sampling-profile group.
-
-    Multi-turn outputs mirror the input folder layout under all_finished_runs__plots,
-    for example <out_root>/<model_name>/temp_0.7.p0.8.k20.
-    """
     sweep_coords = _resolve_multiturn_sweep_coords(runs_df)
     if sweep_coords is None:
         return None
@@ -156,48 +154,15 @@ def _build_multiturn_plot_job(
 
 
 def _resolve_multiturn_sweep_coords(runs_df: pd.DataFrame) -> tuple[str, str] | None:
-    """Resolve model-config slug and sampling profile for one concrete sweep.
-
-    Prefer the directory layout under outputs/mt/all_finished_runs/<model>/<sampling>,
-    because runs_df["model"] may contain the resolved Hugging Face model name.
-    """
-    source_root = Path("outputs/mt/all_finished_runs").resolve()
-    path_pairs: set[tuple[str, str]] = set()
-
-    run_dirs = runs_df.get("run_dir")
-    if run_dirs is not None:
-        for raw_run_dir in run_dirs.dropna().astype(str).tolist():
-            if not raw_run_dir:
-                continue
-            try:
-                rel_parts = Path(raw_run_dir).resolve().relative_to(source_root).parts
-            except ValueError:
-                continue
-            if len(rel_parts) >= 2 and rel_parts[0] and rel_parts[1]:
-                path_pairs.add((str(rel_parts[0]), str(rel_parts[1])))
-
-    if len(path_pairs) == 1:
-        return next(iter(path_pairs))
-    if len(path_pairs) > 1:
+    coords = {
+        sweep_coords
+        for _, row in runs_df.iterrows()
+        for sweep_coords in [_resolve_multiturn_run_coords(row)]
+        if sweep_coords is not None
+    }
+    if len(coords) != 1:
         return None
-
-    model_names = sorted(
-        {
-            str(value)
-            for value in runs_df["model"].dropna().astype(str).tolist()
-            if str(value)
-        }
-    )
-    sampling_profiles = sorted(
-        {
-            str(value)
-            for value in runs_df["sampling_profile"].dropna().astype(str).tolist()
-            if str(value)
-        }
-    )
-    if len(model_names) != 1 or len(sampling_profiles) != 1:
-        return None
-    return model_names[0], sampling_profiles[0]
+    return next(iter(coords))
 
 
 def _build_multiturn_plot_jobs(
@@ -209,7 +174,6 @@ def _build_multiturn_plot_jobs(
     metrics: tuple[str, ...],
     variants: tuple[str, ...],
 ) -> list[PlotJob]:
-    """Build one multi-turn plot job per concrete model/sampling-profile sweep."""
     valid_runs = runs_df[
         runs_df["sampling_profile"].notna()
         & runs_df["run_name"].notna()
@@ -217,16 +181,14 @@ def _build_multiturn_plot_jobs(
     if valid_runs.empty:
         return []
 
-    plot_jobs: list[PlotJob] = []
-    grouped_runs: dict[tuple[str, str], pd.DataFrame] = {}
-    for _, row in valid_runs.iterrows():
-        sweep_coords = _resolve_multiturn_sweep_coords(pd.DataFrame([row]))
-        if sweep_coords is None:
-            continue
-        grouped_runs.setdefault(sweep_coords, []).append(row)
+    valid_runs["sweep_coords"] = valid_runs.apply(_resolve_multiturn_run_coords, axis=1)
+    valid_runs = valid_runs[valid_runs["sweep_coords"].notna()].copy()
+    if valid_runs.empty:
+        return []
 
-    for sweep_coords in sorted(grouped_runs):
-        group_df = pd.DataFrame(grouped_runs[sweep_coords]).copy()
+    plot_jobs: list[PlotJob] = []
+    for sweep_coords, group_df in valid_runs.groupby("sweep_coords", sort=True):
+        group_df = group_df.copy()
         run_names = group_df["run_name"].astype(str).drop_duplicates().tolist()
         if not run_names:
             continue
@@ -238,7 +200,6 @@ def _build_multiturn_plot_jobs(
             runs_df=group_df,
             base_runs_df=group_base_runs_df,
             score_df=group_score_df,
-            runs_dir=out_root,
             out_root=out_root,
             metrics=metrics,
             variants=variants,
@@ -250,7 +211,6 @@ def _build_multiturn_plot_jobs(
 
 
 def _run_plot_job(job: PlotJob) -> tuple[str, int]:
-    """Execute one plot job in a worker process."""
     if job.plot_name == "plot_run_turn_curve":
         if job.base_runs_df is None or job.score_df is None or job.sweep_name is None:
             raise ValueError("plot_run_turn_curve job is missing required inputs.")
@@ -289,7 +249,6 @@ def _run_plot_job(job: PlotJob) -> tuple[str, int]:
 
 
 def _run_plot_jobs(plot_jobs: list[PlotJob], max_workers: int | None) -> int:
-    """Run configured plot jobs and return the total number of saved plots."""
     if not plot_jobs:
         return 0
 
@@ -323,11 +282,6 @@ def _run_plot_jobs(plot_jobs: list[PlotJob], max_workers: int | None) -> int:
 
 
 def main() -> None:
-    """Run enabled plot jobs over merged finished runs.
-
-    Args:
-        None.
-    """
     args = _build_arg_parser().parse_args()
     runs_df, score_df = load_all_finished_dataframes(args.runs_dir)
     if runs_df.empty:

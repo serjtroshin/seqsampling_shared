@@ -30,11 +30,6 @@ FATAL_PATTERNS = [
 
 
 def parse_multi_args(raw_values: list[str] | None) -> list[str]:
-    """Parse repeatable/comma-separated CLI values into a unique ordered list.
-
-    Args:
-        raw_values: Raw argparse values, possibly repeated and comma-separated.
-    """
     if not raw_values:
         return []
     values: list[str] = []
@@ -48,12 +43,21 @@ def parse_multi_args(raw_values: list[str] | None) -> list[str]:
     return values
 
 
-def _safe_float(value: Any) -> float | None:
-    """Safely coerce value to float.
+def path_component(value: str, fallback: str) -> str:
+    cleaned = value.strip()
+    if not cleaned:
+        cleaned = fallback
+    return cleaned.replace("/", "-")
 
-    Args:
-        value: Arbitrary value to convert.
-    """
+
+def metric_path_component(metric: str, variant: str) -> str:
+    name = path_component(metric, "metric")
+    if variant == "default":
+        return name
+    return f"{name}__{path_component(variant, 'variant')}"
+
+
+def safe_float(value: Any) -> float | None:
     try:
         if value is None:
             return None
@@ -62,18 +66,17 @@ def _safe_float(value: Any) -> float | None:
         return None
 
 
-def _safe_int(value: Any) -> int | None:
-    """Safely coerce value to int.
-
-    Args:
-        value: Arbitrary value to convert.
-    """
+def safe_int(value: Any) -> int | None:
     try:
         if value is None:
             return None
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+_safe_float = safe_float
+_safe_int = safe_int
 
 
 def _load_yaml_dict(path: Path) -> dict[str, Any]:
@@ -102,12 +105,7 @@ def _load_json_dict(path: Path) -> dict[str, Any]:
     return {}
 
 
-def _load_jsonl_records(path: Path) -> list[dict[str, Any]]:
-    """Load JSONL records as a list of dictionaries.
-
-    Args:
-        path: JSONL file path to parse.
-    """
+def load_jsonl_records(path: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     with path.open("r", encoding="utf-8") as handle:
         for line in handle:
@@ -118,6 +116,9 @@ def _load_jsonl_records(path: Path) -> list[dict[str, Any]]:
             if isinstance(payload, dict):
                 rows.append(payload)
     return rows
+
+
+_load_jsonl_records = load_jsonl_records
 
 
 def _contains(path: Path, marker: str) -> bool:

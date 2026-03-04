@@ -20,12 +20,14 @@ try:
         _build_turn01_diff_binned_dataframe,
         _sample_file_from_score_rows,
         _sample_turn_text_map,
-        _safe_int,
     )
     from experiments.plots.main_plots.plot_run_turn_curve import _plot_run_turn_curve
     from experiments.plots.main_plots.utils import (
         load_all_finished_dataframes,
+        metric_path_component,
+        path_component as _path_component,
         parse_multi_args,
+        safe_int as _safe_int,
     )
 except ModuleNotFoundError:
     from plot_parallel_vs_sequential import (
@@ -33,10 +35,15 @@ except ModuleNotFoundError:
         _build_turn01_diff_binned_dataframe,
         _sample_file_from_score_rows,
         _sample_turn_text_map,
-        _safe_int,
     )
     from plot_run_turn_curve import _plot_run_turn_curve
-    from utils import load_all_finished_dataframes, parse_multi_args
+    from utils import (
+        load_all_finished_dataframes,
+        metric_path_component,
+        parse_multi_args,
+        path_component as _path_component,
+        safe_int as _safe_int,
+    )
 
 
 DEFAULT_RUNS_DIR = Path("outputs/mt/all_finished_runs/qwen3-32b-instruct/temp_0.0.p1.0.k1")
@@ -54,14 +61,6 @@ GRID_COLUMNS = [
     ("2->3", "binned_prob_of_change_from_3_to_4_turn"),
     ("3->4", "binned_prob_of_change_from_4_to_5_turn"),
 ]
-
-
-def _path_component(value: str, fallback: str) -> str:
-    cleaned = value.strip()
-    if not cleaned:
-        cleaned = fallback
-    return cleaned.replace("/", "-")
-
 
 def _sort_prompt_ids(prompt_ids: list[str]) -> list[str]:
     def key(prompt_id: str) -> tuple[int, int | str]:
@@ -90,9 +89,7 @@ def _aggregated_out_path(
     variant: str,
 ) -> Path:
     scenario = _path_component(scenario_name, "unknown_scenario")
-    metric_name = _path_component(metric, "metric")
-    if variant != "default":
-        metric_name = f"{metric_name}__{_path_component(variant, 'variant')}"
+    metric_name = metric_path_component(metric, variant)
     return out_root / dataset_tag / scenario / f"reranker_best_worst__{metric_name}.png"
 
 
@@ -105,9 +102,7 @@ def _turn_curve_out_path(
     dataset_tag = _path_component(str(run_row.get("dataset_tag") or ""), "unknown_dataset")
     lang = _path_component(str(run_row.get("tgt") or run_row.get("lp") or ""), "unknown_lang")
     scenario = _path_component(str(run_row.get("scenario_name") or ""), "unknown_scenario")
-    metric_name = _path_component(metric, "metric")
-    if variant != "default":
-        metric_name = f"{metric_name}__{_path_component(variant, 'variant')}"
+    metric_name = metric_path_component(metric, variant)
     return out_root / "turn_curves" / dataset_tag / lang / scenario / f"{metric_name}.png"
 
 
@@ -120,9 +115,7 @@ def _binned_prob_out_path(
     dataset_tag = _path_component(str(run_row.get("dataset_tag") or ""), "unknown_dataset")
     lang = _path_component(str(run_row.get("tgt") or run_row.get("lp") or ""), "unknown_lang")
     scenario = _path_component(str(run_row.get("scenario_name") or ""), "unknown_scenario")
-    metric_name = _path_component(metric, "metric")
-    if variant != "default":
-        metric_name = f"{metric_name}__{_path_component(variant, 'variant')}"
+    metric_name = metric_path_component(metric, variant)
     return out_root / "binned_prob_of_change" / dataset_tag / lang / scenario / f"{metric_name}.png"
 
 
@@ -138,9 +131,7 @@ def _binned_prob_turn_pair_out_path(
     dataset_tag = _path_component(str(run_row.get("dataset_tag") or ""), "unknown_dataset")
     lang = _path_component(str(run_row.get("tgt") or run_row.get("lp") or ""), "unknown_lang")
     scenario = _path_component(str(run_row.get("scenario_name") or ""), "unknown_scenario")
-    metric_name = _path_component(metric, "metric")
-    if variant != "default":
-        metric_name = f"{metric_name}__{_path_component(variant, 'variant')}"
+    metric_name = metric_path_component(metric, variant)
     return (
         out_root
         / f"binned_prob_of_change_from_{start_turn_id + 1}_to_{end_turn_id + 1}_turn"
@@ -158,9 +149,7 @@ def _probability_of_change_grid_out_path(
     metric: str,
     variant: str,
 ) -> Path:
-    metric_name = _path_component(metric, "metric")
-    if variant != "default":
-        metric_name = f"{metric_name}__{_path_component(variant, 'variant')}"
+    metric_name = metric_path_component(metric, variant)
     return out_root / f"probability_of_change_grid__{dataset_tag}__{lang}__{metric_name}.png"
 
 
@@ -171,9 +160,7 @@ def _probability_of_change_bar_out_path(
     metric: str,
     variant: str,
 ) -> Path:
-    metric_name = _path_component(metric, "metric")
-    if variant != "default":
-        metric_name = f"{metric_name}__{_path_component(variant, 'variant')}"
+    metric_name = metric_path_component(metric, variant)
     return out_root / f"probability_of_change_bars__{dataset_tag}__{lang}__{metric_name}.png"
 
 
@@ -184,9 +171,7 @@ def _turn_curve_bar_out_path(
     metric: str,
     variant: str,
 ) -> Path:
-    metric_name = _path_component(metric, "metric")
-    if variant != "default":
-        metric_name = f"{metric_name}__{_path_component(variant, 'variant')}"
+    metric_name = metric_path_component(metric, variant)
     return out_root / f"turn_curve_bars__{dataset_tag}__{lang}__{metric_name}.png"
 
 
@@ -200,9 +185,7 @@ def _probability_of_change_source_path(
     variant: str,
     source_dir: str,
 ) -> Path:
-    metric_name = _path_component(metric, "metric")
-    if variant != "default":
-        metric_name = f"{metric_name}__{_path_component(variant, 'variant')}"
+    metric_name = metric_path_component(metric, variant)
     return (
         out_root
         / source_dir

@@ -10,19 +10,10 @@ if "MPLCONFIGDIR" not in os.environ:
 import matplotlib.pyplot as plt
 import pandas as pd
 
-
-def _path_component(value: str, fallback: str) -> str:
-    """Keep human-readable path components while avoiding nested separators.
-
-    Args:
-        value: Raw directory/file component.
-        fallback: Fallback string when value is empty.
-    """
-    cleaned = value.strip()
-    if not cleaned:
-        cleaned = fallback
-    # Keep names readable; only normalize path separators.
-    return cleaned.replace("/", "-")
+try:
+    from experiments.plots.main_plots.utils import metric_path_component, path_component
+except ModuleNotFoundError:
+    from utils import metric_path_component, path_component
 
 
 def _run_turn_out_path(
@@ -31,29 +22,12 @@ def _run_turn_out_path(
     metric: str,
     variant: str,
 ) -> Path:
-    """Build output path for one run's turn-curve plot.
-
-    Args:
-        out_dir: Root output directory for this plot family.
-        run_row: Run-level dataframe row with run metadata.
-        metric: Metric name.
-        variant: Metric variant.
-    """
-    dataset_tag = _path_component(str(run_row.get("dataset_tag") or ""), "unknown_dataset")
-    lang = _path_component(str(run_row.get("tgt") or run_row.get("lp") or ""), "unknown")
-    scenario_name = _path_component(str(run_row.get("scenario_name") or ""), "unknown_scenario")
-    metric_name = _path_component(str(metric), "metric")
-    if variant != "default":
-        metric_name = f"{metric_name}__{_path_component(str(variant), 'variant')}"
+    dataset_tag = path_component(str(run_row.get("dataset_tag") or ""), "unknown_dataset")
+    lang = path_component(str(run_row.get("tgt") or run_row.get("lp") or ""), "unknown")
+    scenario_name = path_component(str(run_row.get("scenario_name") or ""), "unknown_scenario")
+    metric_name = metric_path_component(str(metric), str(variant))
     file_name = f"{metric_name}.png"
-    return (
-        out_dir
-        / "turn_curves"
-        / dataset_tag
-        / lang
-        / scenario_name
-        / file_name
-    )
+    return out_dir / "turn_curves" / dataset_tag / lang / scenario_name / file_name
 
 
 def _plot_run_turn_curve(
@@ -64,16 +38,6 @@ def _plot_run_turn_curve(
     sweep_name: str,
     out_path: Path,
 ) -> bool:
-    """Render one run-level mean-quality-vs-turn curve.
-
-    Args:
-        run_row: Run-level metadata row (run_index, task_id, tgt, status).
-        run_score_df: Score-level rows for a single run+metric+variant.
-        metric: Metric name used in title/filename.
-        variant: Metric variant used in title/filename.
-        sweep_name: Group name shown in the plot title.
-        out_path: Target PNG path.
-    """
     turn_df = run_score_df.copy()
     turn_df["sequential_id"] = pd.to_numeric(turn_df["sequential_id"], errors="coerce")
     turn_df["quality"] = pd.to_numeric(turn_df["quality"], errors="coerce")
@@ -124,16 +88,6 @@ def plot_run_turn_curves(
     sweep_name: str,
     out_dir: Path,
 ) -> int:
-    """Generate run-level turn curves for all selected metric/variant pairs.
-
-    Args:
-        base_runs_df: One row per run with identifying metadata.
-        score_df: Score-level dataframe with sequential_id and quality columns.
-        metrics: Metric names to include.
-        variants: Variant names to include.
-        sweep_name: Group label shown in generated titles.
-        out_dir: Output directory for this plot function family.
-    """
     if score_df.empty:
         print("warn_no_turn_plots: score dataframe is empty.")
         return 0

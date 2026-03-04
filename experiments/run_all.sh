@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT}"
 
 MODEL_CONFIG="configs/model_configs/qwen3-32b-instruct.yaml"
-EXPERIMENT_DIR="clear_run_2mar_exp2"
+EXPERIMENT_DIR="clear_run_3mar_sampling"
 EXPERIMENT_DIR_ARGS=()
 if [[ -n "${EXPERIMENT_DIR}" ]]; then
   EXPERIMENT_DIR_ARGS=(--experiment-dir "${EXPERIMENT_DIR}")
@@ -26,18 +26,18 @@ fi
 #   "${EXPERIMENT_DIR_ARGS[@]}"
 
 # mt_multi_turn sweep (normal dataset)
-# .venv/bin/python experiments/mt/sweep_runner.py \
-#   --config experiments/mt/sweep_configs/mt_multi_turn.yaml \
-#   --submit \
-#   --override "model_config=${MODEL_CONFIG}" \
-#   "${EXPERIMENT_DIR_ARGS[@]}"
+.venv/bin/python experiments/mt/sweep_runner.py \
+  --config experiments/mt/sweep_configs/mt_multi_turn.yaml \
+  --submit \
+  --override "model_config=${MODEL_CONFIG}" \
+  "${EXPERIMENT_DIR_ARGS[@]}"
 
 # mt_multi_turn sweep (doc dataset)
-# .venv/bin/python experiments/mt/sweep_runner.py \
-#   --config experiments/mt/sweep_configs/mt_multi_turn_plus_doc.yaml \
-#   --submit \
-#   --override "model_config=${MODEL_CONFIG}" \
-#   "${EXPERIMENT_DIR_ARGS[@]}"
+.venv/bin/python experiments/mt/sweep_runner.py \
+  --config experiments/mt/sweep_configs/mt_multi_turn_doc.yaml \
+  --submit \
+  --override "model_config=${MODEL_CONFIG}" \
+  "${EXPERIMENT_DIR_ARGS[@]}"
 
 # greedy (normal dataset)
 # .venv/bin/python experiments/mt/sweep_runner.py \
@@ -54,22 +54,22 @@ fi
 #   "${EXPERIMENT_DIR_ARGS[@]}"
 
 # greedy decide-if-change (normal dataset)
-.venv/bin/python experiments/mt/sweep_runner.py \
-  --config experiments/mt/sweep_configs/mt_greedy_decide_if_change.yaml \
-  --submit \
-  --override "model_config=${MODEL_CONFIG}" \
-  "${EXPERIMENT_DIR_ARGS[@]}"
+# .venv/bin/python experiments/mt/sweep_runner.py \
+#   --config experiments/mt/sweep_configs/mt_greedy_decide_if_change.yaml \
+#   --submit \
+#   --override "model_config=${MODEL_CONFIG}" \
+#   "${EXPERIMENT_DIR_ARGS[@]}"
 
 # greedy decide-if-change (doc dataset)
-.venv/bin/python experiments/mt/sweep_runner.py \
-  --config experiments/mt/sweep_configs/mt_greedy_doc_decide_if_change.yaml \
-  --submit \
-  --override "model_config=${MODEL_CONFIG}" \
-  "${EXPERIMENT_DIR_ARGS[@]}"
+# .venv/bin/python experiments/mt/sweep_runner.py \
+#   --config experiments/mt/sweep_configs/mt_greedy_doc_decide_if_change.yaml \
+#   --submit \
+#   --override "model_config=${MODEL_CONFIG}" \
+#   "${EXPERIMENT_DIR_ARGS[@]}"
 
 
 # tail -f \
 #   outputs/mt/sweeps/mt_parallel/mt-parallel_20260221-174806/sweep.log \
 #   outputs/mt/sweeps/mt_parallel_doc/mt-parallel-doc_20260223-000000/sweep.log \
 #   outputs/mt/sweeps/mt_multi_turn/mt-multi-turn_20260221-174806/sweep.log \
-#   outputs/mt/sweeps/mt_multi_turn_plus_doc/mt-multi-turn-plus-doc_20260221-174807/sweep.log
+#   outputs/mt/sweeps/mt_multi_turn_doc/mt-multi-turn-doc_20260221-174807/sweep.log
